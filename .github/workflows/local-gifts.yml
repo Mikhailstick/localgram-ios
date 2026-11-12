@@ -2,6 +2,12 @@ name: Build LocalGram IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      build_number:
+        description: "App build number; keep unchanged for compilation retries"
+        type: number
+        required: true
+        default: 4
 
 permissions:
   contents: read
@@ -46,7 +52,9 @@ jobs:
             localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
       - name: Run ledger tests and compile the device IPA
         id: compile
-        run: python3 client/LocalGifts/build_ipa.py --build-number ${{ github.run_number }}
+        env:
+          LOCALGIFTS_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: python3 client/LocalGifts/build_ipa.py --build-number "$LOCALGIFTS_BUILD_NUMBER"
       - name: Save completed Bazel actions for the next build
         if: always() && steps.compile.outcome != 'skipped'
         uses: actions/cache/save@v4
