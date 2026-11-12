@@ -58,6 +58,8 @@ def main():
     icons = ROOT / "Telegram/Telegram-iOS/LocalGramAssets.xcassets/LocalGram.appiconset"
     manifest = json.loads((icons / "Contents.json").read_text())
     for icon in manifest["images"]:
+        if icon["idiom"] == "ipad" and icon["size"] == "76x76" and icon["scale"] == "1x":
+            failures.append("Xcode rejects the obsolete iPad 76x76@1x icon for this deployment target.")
         image = Image.open(icons / icon["filename"])
         expected = int(float(icon["size"].split("x")[0]) * int(icon["scale"].rstrip("x")))
         if image.size != (expected, expected) or image.mode != "RGB":

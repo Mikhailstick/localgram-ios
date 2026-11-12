@@ -36,12 +36,23 @@ jobs:
         run: |
           python3 -m pip install -r client/LocalGifts/requirements-validation.txt
           python3 client/LocalGifts/validate_sources.py
-      - uses: actions/cache@v4
+      - name: Restore compiled Bazel actions
+        id: bazel-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/localgram-bazel-cache
-          key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
+          key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
       - name: Run ledger tests and compile the device IPA
+        id: compile
         run: python3 client/LocalGifts/build_ipa.py --build-number ${{ github.run_number }}
+      - name: Save completed Bazel actions for the next build
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/localgram-bazel-cache
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
       - name: Export the compiled IPA
         uses: actions/upload-artifact@v4
         with:

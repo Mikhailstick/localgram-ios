@@ -32,7 +32,7 @@ def main():
         ("iphone", 20, 2), ("iphone", 20, 3), ("iphone", 29, 2), ("iphone", 29, 3),
         ("iphone", 40, 2), ("iphone", 40, 3), ("iphone", 60, 2), ("iphone", 60, 3),
         ("ipad", 20, 1), ("ipad", 20, 2), ("ipad", 29, 1), ("ipad", 29, 2),
-        ("ipad", 40, 1), ("ipad", 40, 2), ("ipad", 76, 1), ("ipad", 76, 2),
+        ("ipad", 40, 1), ("ipad", 40, 2), ("ipad", 76, 2),
         ("ipad", 83.5, 2), ("ios-marketing", 1024, 1),
     ]
     entries = []
