@@ -1,0 +1,51 @@
+name: Build LocalGram IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 360
+    env:
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      LOCALGIFTS_BUNDLE_ID: dev.localgram.client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore the pinned client and its submodules
+        run: python3 bootstrap.py --destination client
+      - name: Select Xcode 26.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcode_path="/Applications/Xcode_26.2.app/Contents/Developer"
+          if [[ ! -d "$xcode_path" ]]; then
+            echo "This runner must have Xcode 26.2 installed."
+            exit 1
+          fi
+          sudo xcode-select --switch "$xcode_path"
+          xcodebuild -version
+      - name: Validate the implementation sources
+        run: |
+          python3 -m pip install -r client/LocalGifts/requirements-validation.txt
+          python3 client/LocalGifts/validate_sources.py
+      - uses: actions/cache@v4
+        with:
+          path: ~/localgram-bazel-cache
+          key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
+      - name: Run ledger tests and compile the device IPA
+        run: python3 client/LocalGifts/build_ipa.py --build-number ${{ github.run_number }}
+      - name: Export the compiled IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalGram-unsigned-IPA
+          path: client/LocalGifts/artifacts/LocalGram-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

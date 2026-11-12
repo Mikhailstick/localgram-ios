@@ -1,0 +1,273 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 7259ebd..f08f252 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -1,9 +1,6 @@
+ name: CI
+ 
+ on:
+-  push:
+-    branches: [ master ]
+-
+   workflow_dispatch:
+ 
+ jobs:
+diff --git a/Telegram/BUILD b/Telegram/BUILD
+index 9ad13cf..621e1c3 100644
+--- a/Telegram/BUILD
++++ b/Telegram/BUILD
+@@ -309,6 +309,11 @@ filegroup(
+     ], exclude = ["Telegram-iOS/DefaultAppIcon.xcassets/**/.*"]),
+ )
+ 
++filegroup(
++    name = "LocalGram_icon",
++    srcs = glob(["Telegram-iOS/LocalGramAssets.xcassets/LocalGram.appiconset/**"]),
++)
++
+ filegroup(
+     name = "DefaultIcon",
+     srcs = glob([
+@@ -1568,11 +1573,11 @@ plist_fragment(
+     <key>CFBundleDevelopmentRegion</key>
+     <string>en</string>
+     <key>CFBundleDisplayName</key>
+-    <string>Telegram</string>
++    <string>LocalGram</string>
+     <key>CFBundleIdentifier</key>
+     <string>{telegram_bundle_id}</string>
+     <key>CFBundleName</key>
+-    <string>Telegram</string>
++    <string>LocalGram</string>
+     <key>CFBundlePackageType</key>
+     <string>APPL</string>
+     <key>CFBundleSignature</key>
+@@ -1777,7 +1782,7 @@ ios_application(
+         ":RequiredDeviceCapabilitiesPlist",
+         ":UrlTypesInfoPlist",
+     ],
+-    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
++    app_icons = [":LocalGram_icon"],
+     alternate_icons = [
+         ":{}".format(name) for name in alternate_icon_folders
+     ],
+diff --git a/build-system/Make/Make.py b/build-system/Make/Make.py
+index bb65a43..4d7f9a1 100644
+--- a/build-system/Make/Make.py
++++ b/build-system/Make/Make.py
+@@ -701,6 +701,15 @@ def build(bazel, arguments):
+ 
+     bazel_command_line.set_split_swiftmodules(arguments.enableParallelSwiftmoduleGeneration)
+ 
++    if arguments.localGiftsUnsigned:
++        if arguments.configuration not in ('debug_arm64', 'release_arm64'):
++            raise Exception('--localGiftsUnsigned requires a device arm64 build.')
++        bazel_command_line.common_build_args += [
++            '--features=-apple.codesign',
++            '--//Telegram:disableProvisioningProfiles',
++            '--//Telegram:disableExtensions',
++        ]
++
+     bazel_command_line.invoke_build()
+ 
+     if arguments.outputBuildArtifactsPath is not None:
+@@ -1062,6 +1071,12 @@ if __name__ == '__main__':
+         default=False,
+         help='Enable single-core Swift compile profiling flags.'
+     )
++    buildParser.add_argument(
++        '--localGiftsUnsigned',
++        action='store_true',
++        default=False,
++        help='Build a main-app-only unsigned device IPA for personal re-signing with Sideloadly.'
++    )
+     buildParser.add_argument(
+         '--target',
+         type=str,
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift
+index bf1b1cd..514f352 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift
+@@ -304,6 +304,9 @@ public class ChatMessageGiftBubbleContentNode: ChatMessageBubbleContentNode {
+     }
+     
+     private func expandPressed() {
++        if let item = self.item, LocalGiftsStore.isLocalMessage(item.message.id) {
++            return
++        }
+         self.isExpanded = !self.isExpanded
+         guard let item = self.item else{
+             return
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD
+index 09315ff..08b2ff9 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD
+@@ -10,6 +10,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/LocalGiftsUI",
+         "//submodules/AccountContext",
+         "//submodules/AccountUtils",
+         "//submodules/ActionSheetPeerItem",
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+index fd01930..b2fdb66 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+@@ -187,6 +187,7 @@ enum PeerInfoSettingsSection {
+     case profile
+     case premiumManagement
+     case stars
++    case localGifts
+     case ton
+ }
+ 
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+index 806e652..a43fcd1 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+@@ -15,6 +15,7 @@ import TelegramPresentationData
+ import PresentationDataUtils
+ import PasswordSetupUI
+ import InstantPageCache
++import LocalGiftsUI
+ 
+ extension PeerInfoScreenNode {
+     func openSettings(section: PeerInfoSettingsSection) {
+@@ -44,6 +45,10 @@ extension PeerInfoScreenNode {
+             }
+         }
+         switch section {
++        case .localGifts:
++            if #available(iOS 14.0, *) {
++                push(LocalGiftsController(context: self.context))
++            }
+         case .avatar:
+             self.controller?.openAvatarForEditing()
+         case .edit:
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index c5f58f4..904f3db 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -18,6 +18,7 @@ enum SettingsSection: Int, CaseIterable {
+     case phone
+     case accounts
+     case myProfile
++    case localGifts
+     case proxy
+     case apps
+     case shortcuts
+@@ -151,6 +152,12 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+             interaction.openSettings(.profile)
+         }))
+         
++        items[.localGifts]!.append(PeerInfoScreenDisclosureItem(
++            id: 0, text: "Мои функции", icon: PresentationResourcesSettings.stars, action: {
++                interaction.openSettings(.localGifts)
++            }
++        ))
++
+         if !settings.proxySettings.servers.isEmpty {
+             let proxyType: String
+             if settings.proxySettings.enabled, let activeServer = settings.proxySettings.activeServer {
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index b1ea96b..c576e91 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -529,9 +529,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let appGroupName = "group.\(baseAppBundleId)"
+-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++        var maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+         
+         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
++        // Personal sideload signatures may not include App Groups. The main app can still
++        // keep its own account data in its sandbox; the unsigned build omits extensions.
++        if maybeAppGroupUrl == nil && buildConfig.appSpecificUrlScheme == "localgifts" {
++            let localContainer = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
++                .appendingPathComponent("LocalGramAccountData", isDirectory: true)
++            do {
++                try FileManager.default.createDirectory(at: localContainer, withIntermediateDirectories: true)
++                maybeAppGroupUrl = localContainer
++            } catch {
++                // Keep the existing launch error path when no writable container is available.
++            }
++        }
+         self.buildConfig = buildConfig
+         let signatureDict = BuildConfigExtra.signatureDict()
+         
+diff --git a/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift b/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
+index e6eff30..dca2cdd 100644
+--- a/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
++++ b/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
+@@ -21,6 +21,10 @@ import ChatPresentationInterfaceState
+ 
+ extension ChatControllerImpl {
+     func openMessageContextMenu(message: EngineMessage, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
++        if LocalGiftsStore.isLocalMessage(message.id) {
++            self.showLocalGiftReceipt(messageId: message.id, allowDelete: true)
++            return
++        }
+         if self.presentationInterfaceState.interfaceState.selectionState != nil {
+             return
+         }
+diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
+index 23695c2..26ca20c 100644
+--- a/submodules/TelegramUI/Sources/ChatController.swift
++++ b/submodules/TelegramUI/Sources/ChatController.swift
+@@ -860,6 +860,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+         }
+         
+         let controllerInteraction = ChatControllerInteraction(openMessage: { [weak self] message, params in
++            if let self, LocalGiftsStore.isLocalMessage(message.id) {
++                self.showLocalGiftReceipt(messageId: message.id, allowDelete: false)
++                return true
++            }
+             guard let self, self.isNodeLoaded, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() else {
+                 return false
+             }
+diff --git a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+index b547dd3..973b97f 100644
+--- a/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
++++ b/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+@@ -1908,6 +1908,9 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+         let startTime = CFAbsoluteTimeGetCurrent()
+         var measure_isFirstTime = true
+         let messageViewQueue = Queue.mainQueue()
++        // A local receipt refreshes the visible timeline through the existing render pipeline.
++        let localGiftsContentSettings = combineLatest(contentSettings, LocalGiftsStore.shared(accountPeerId: context.account.peerId).state)
++        |> map { settings, _ in settings }
+         let historyViewTransitionDisposable = (combineLatest(queue: messageViewQueue,
+             historyViewUpdate |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_historyViewUpdate"),
+             self.chatPresentationDataPromise.get() |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_chatPresentationData"),
+@@ -1934,7 +1937,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+             audioTranscriptionTrial |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_audioTranscriptionTrial"),
+             chatThemes |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_chatThemes"),
+             deviceContactsNumbers |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_deviceContactsNumbers"),
+-            contentSettings |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_contentSettings")
++            localGiftsContentSettings |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_contentSettings")
+         ) |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_firstChatHistoryTransition")).startStrict(next: { [weak self] update, chatPresentationData, selectedMessages, updatingMedia, networkType, preferredStoryHighQuality, animatedEmojiStickers, additionalAnimatedEmojiStickers, customChannelDiscussionReadState, customThreadOutgoingReadState, availableReactions, availableMessageEffects, savedMessageTags, defaultReaction, accountPeer, accountCountry, suggestAudioTranscription, promises, topicAuthorId, translationState, maxReadStoryId, recommendedChannels, audioTranscriptionTrial, chatThemes, deviceContactsNumbers, contentSettings in
+             let (historyAppearsCleared, pendingUnpinnedAllMessages, pendingRemovedMessages, currentlyPlayingMessageIdAndType, scrollToMessageId, chatHasBots, allAdMessages) = promises
+             
+@@ -2210,7 +2213,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+                 }
+                                 
+                 let previousChatHistoryEntriesForViewState = chatHistoryEntriesForViewState.with({ $0 })
+-                let (filteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
++                let (baseFilteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
+                     currentState: previousChatHistoryEntriesForViewState,
+                     context: context,
+                     location: chatLocation,
+@@ -2239,6 +2242,11 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
+                     isMusicPlaylist: isMusicPlaylist,
+                     pinToTopStableId: pinToTopStableId
+                 )
++                let filteredEntries = localGiftsChatEntries(
++                    entries: baseFilteredEntries, context: context, location: chatLocation, subject: subject,
++                    view: view, accountPeer: accountPeer, presentationData: chatPresentationData, reverse: reverse,
++                    enabled: mode == .bubbles && tag == nil && !historyAppearsCleared
++                )
+                 let lastHeaderId = filteredEntries.last.flatMap { listMessageDateHeaderId(timestamp: $0.index.timestamp) } ?? 0
+                 let processedView = ChatHistoryView(originalView: view, filteredEntries: filteredEntries, associatedData: associatedData, lastHeaderId: lastHeaderId, id: id, locationInput: update.2, ignoreMessagesInTimestampRange: update.3, ignoreMessageIds: update.4)
+                 let previousValueAndVersion = previousView.swap((processedView, update.1, selectedMessages, allAdMessages.version))

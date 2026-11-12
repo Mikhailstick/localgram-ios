@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/Swiftgram/Telegram-iOS.git",
+  "tag": "release-12.9.2",
+  "commit": "6ad963e5b62d354da79040f388ae2b9132fb17b8",
+  "xcode": "26.2",
+  "note": "This release tag contains the Telegram iOS baseline, not Swiftgram's current master-specific features."
+}
