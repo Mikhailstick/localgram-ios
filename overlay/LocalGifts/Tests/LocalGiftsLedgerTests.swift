@@ -27,6 +27,31 @@ final class LocalGiftsLedgerTests: XCTestCase {
         XCTAssertEqual(ledger, previous)
     }
 
+    func testNativeGiftMetadataPersistsAndOldReceiptsRemainReadable() throws {
+        var ledger = LocalGiftsLedger()
+        try ledger.setBalance(1000)
+        let receipt = try ledger.purchase(requestId: UUID(), recipientId: 42,
+            recipientName: "Кеша", timestamp: 1_700_000_000, kind: .gift,
+            title: "Подарок", cost: 175, giftData: Data([1]),
+            text: "С праздником!", entitiesData: Data([2, 3]), nameHidden: true)
+        let encoded = try JSONEncoder().encode(ledger)
+        XCTAssertEqual(try JSONDecoder().decode(LocalGiftsLedger.self, from: encoded), ledger)
+        XCTAssertEqual(receipt.text, "С праздником!")
+        XCTAssertEqual(receipt.nameHidden, true)
+
+        var oldJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var oldReceipts = try XCTUnwrap(oldJSON["receipts"] as? [[String: Any]])
+        for field in ["text", "entitiesData", "nameHidden"] { oldReceipts[0].removeValue(forKey: field) }
+        oldJSON["receipts"] = oldReceipts
+        let oldData = try JSONSerialization.data(withJSONObject: oldJSON)
+        let restored = try JSONDecoder().decode(LocalGiftsLedger.self, from: oldData)
+        try restored.validate()
+        XCTAssertEqual(restored.balance, 825)
+        XCTAssertEqual(restored.receipts.first?.id, receipt.id)
+        XCTAssertNil(restored.receipts.first?.text)
+        XCTAssertNil(restored.receipts.first?.nameHidden)
+    }
+
     func testRepeatedConfirmationDoesNotDebitTwice() throws {
         var ledger = LocalGiftsLedger()
         try ledger.setBalance(200)

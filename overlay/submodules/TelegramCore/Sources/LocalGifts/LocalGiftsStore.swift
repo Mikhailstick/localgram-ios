@@ -3,6 +3,20 @@ import SwiftSignalKit
 
 /// Shares one persisted ledger between the settings screen and chat renderer for each account.
 public final class LocalGiftsStore {
+    /// Enables local presentation only in the LocalGram app, without adding app-layer dependencies.
+    public static let isEnabled: Bool = {
+        let bundle = Bundle.main
+        if bundle.object(forInfoDictionaryKey: "CFBundleName") as? String == "LocalGram"
+            || bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == "LocalGram" {
+            return true
+        }
+        let urlTypes = bundle.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        return urlTypes.contains { urlType in
+            let schemes = urlType["CFBundleURLSchemes"] as? [String] ?? []
+            return schemes.contains("localgifts")
+        }
+    }()
+
     /// A renderer-only namespace, deliberately outside every cloud and pending-send namespace.
     public static let messageNamespace: Int32 = 1_900_000_001
 
@@ -56,6 +70,26 @@ public final class LocalGiftsStore {
         return self.ledger
     }
 
+    /// Projects a local balance for a screen without changing the server StarsContext.
+    public func presentationState(_ state: StarsContext.State?) -> StarsContext.State {
+        return Self.presentationState(state, balance: self.snapshot().balance)
+    }
+
+    /// Updates a screen when either server metadata or the account-local ledger changes.
+    public func presentationState(_ state: Signal<StarsContext.State?, NoError>) -> Signal<StarsContext.State?, NoError> {
+        return combineLatest(state, self.state)
+        |> map { state, ledger -> StarsContext.State? in
+            return Self.presentationState(state, balance: ledger.balance)
+        }
+        |> distinctUntilChanged
+    }
+
+    private static func presentationState(_ state: StarsContext.State?, balance: Int64) -> StarsContext.State {
+        var result = state ?? StarsContext.State(flags: [], balance: .zero, subscriptions: [], canLoadMoreSubscriptions: false, transactions: [], canLoadMoreTransactions: false, isLoading: false)
+        result.balance = StarsAmount(value: balance, nanos: 0)
+        return result
+    }
+
     /// UI mutations run on main; readers and the state signal can be used from any queue.
     private func update(reset: Bool = false, _ transform: (inout LocalGiftsLedger) throws -> Void) throws {
         precondition(Thread.isMainThread)
@@ -106,11 +140,12 @@ public final class LocalGiftsStore {
     }
 
     @discardableResult
-    public func sendGift(_ gift: StarGift, recipientId: EnginePeer.Id, recipientName: String, requestId: UUID) throws -> LocalGiftReceipt {
-        guard let price = Self.starsPrice(for: gift) else {
+    public func sendGift(_ gift: StarGift, recipientId: EnginePeer.Id, recipientName: String, requestId: UUID, text: String? = nil, entities: [MessageTextEntity]? = nil, nameHidden: Bool = false, priceOverride: Int64? = nil) throws -> LocalGiftReceipt {
+        guard let price = priceOverride ?? Self.starsPrice(for: gift), price > 0 else {
             throw LocalGiftsError.unsupportedCurrency
         }
         let data = try JSONEncoder().encode(gift)
+        let entitiesData = try entities.map { try JSONEncoder().encode($0) }
         let kind: LocalGiftReceipt.Kind
         if case .unique = gift {
             kind = .collectible
@@ -121,7 +156,8 @@ public final class LocalGiftsStore {
         try self.update {
             receipt = try $0.purchase(requestId: requestId, recipientId: recipientId.toInt64(), recipientName: recipientName,
                 timestamp: Int32(clamping: Int64(Date().timeIntervalSince1970)), kind: kind,
-                title: Self.title(for: gift), cost: price, giftData: data)
+                title: Self.title(for: gift), cost: price, giftData: data,
+                text: text, entitiesData: entitiesData, nameHidden: nameHidden)
         }
         return receipt!
     }
@@ -152,5 +188,10 @@ public final class LocalGiftsStore {
     public static func decodedGift(_ receipt: LocalGiftReceipt) -> StarGift? {
         guard let data = receipt.giftData else { return nil }
         return try? JSONDecoder().decode(StarGift.self, from: data)
+    }
+
+    public static func decodedEntities(_ receipt: LocalGiftReceipt) -> [MessageTextEntity]? {
+        guard let data = receipt.entitiesData else { return nil }
+        return try? JSONDecoder().decode([MessageTextEntity].self, from: data)
     }
 }

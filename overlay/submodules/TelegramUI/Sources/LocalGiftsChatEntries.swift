@@ -44,8 +44,8 @@ func localGiftsChatEntries(
             guard let gift = LocalGiftsStore.decodedGift(receipt) else { continue }
             switch gift {
             case .generic:
-                action = .starGift(gift: gift, convertStars: nil, text: nil, entities: nil,
-                    nameHidden: false, savedToProfile: false, converted: false, upgraded: false,
+                action = .starGift(gift: gift, convertStars: nil, text: receipt.text, entities: LocalGiftsStore.decodedEntities(receipt),
+                    nameHidden: receipt.nameHidden ?? false, savedToProfile: false, converted: false, upgraded: false,
                     canUpgrade: false, upgradeStars: nil, isRefunded: false, isPrepaidUpgrade: false,
                     upgradeMessageId: nil, peerId: peerId, senderId: context.account.peerId, savedId: nil,
                     prepaidUpgradeHash: nil, giftMessageId: nil, upgradeSeparate: false,

@@ -273,9 +273,9 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             case (0, 0): content.text = "★ \(self.ledger.balance)"; content.secondaryText = "Изменить баланс Stars"; content.image = UIImage(systemName: "star.fill")
             case (0, 1): content.text = "Получатель"; content.secondaryText = self.recipient.map(self.name) ?? "Выбрать человека"; content.image = UIImage(systemName: "person.crop.circle")
             case (0, 2): content.text = "Отправить звёзды"; content.image = UIImage(systemName: "star.circle")
-            case (1, 0): content.text = "Обычные подарки"; content.image = UIImage(systemName: "gift.fill")
+            case (1, 0): content.text = "Меню подарков"; content.image = UIImage(systemName: "gift.fill")
             case (1, 1): content.text = "NFT через маркетплейс"; content.image = UIImage(systemName: "sparkles")
-            case (1, 2): content.text = "NFT по ссылке"; content.image = UIImage(systemName: "link")
+            case (1, 2): content.text = "Мои звёзды"; content.image = UIImage(systemName: "star.circle")
             case (2, _):
                 let receipt = self.visibleReceipts[indexPath.row]
                 content.text = receipt.title
@@ -312,19 +312,13 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case (0, 1): self.chooseRecipient {}
         case (0, 2):
             self.withRecipient { [weak self] in
-                guard let self else { return }
-                self.requestAmount(title: "Сколько звёзд отправить?", initial: "") { [weak self] amount in
-                    guard let self, let recipient = self.recipient else { return }
-                    let requestId = UUID()
-                    self.confirm(title: "Отправить \(amount) ★", message: self.name(of: recipient), destructive: false) { [weak self] in
-                        guard let self else { return }
-                        self.perform { _ = try self.store.sendStars(amount, recipientId: recipient.id, recipientName: self.name(of: recipient), requestId: requestId) }
-                    }
-                }
+                self?.openNativeStarsGift()
             }
-        case (1, 0): self.withRecipient { [weak self] in self?.pushCatalog(.regular) }
-        case (1, 1): self.withRecipient { [weak self] in self?.pushCatalog(.marketplaceTypes) }
-        case (1, 2): self.withRecipient { [weak self] in self?.lookupGift() }
+        case (1, 0), (1, 1): self.withRecipient { [weak self] in self?.openNativeGiftMenu() }
+        case (1, 2):
+            guard let starsContext = self.context.starsContext else { return }
+            (self.navigationController as? NavigationController)?.pushViewController(
+                self.context.sharedContext.makeStarsTransactionsScreen(context: self.context, starsContext: starsContext))
         case (2, _):
             let receipt = self.visibleReceipts[indexPath.row]
             let chat = self.context.sharedContext.makeChatController(context: self.context,
@@ -349,6 +343,35 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
 
     private func pushCatalog(_ mode: Mode) {
         (self.navigationController as? NavigationController)?.pushViewController(LocalGiftsController(context: self.context, mode: mode, recipient: self.recipient))
+    }
+
+    private func openNativeGiftMenu() {
+        guard let recipient = self.recipient, self.context.starsContext != nil else { return }
+        self.lookupDisposable.set((self.context.engine.payments.premiumGiftCodeOptions(peerId: recipient.id)
+        |> deliverOnMainQueue).start(next: { [weak self] options in
+            guard let self else { return }
+            let premiumOptions = options.filter { $0.users == 1 }.map {
+                CachedPremiumGiftOption(months: $0.months, currency: $0.currency, amount: $0.amount, botUrl: "", storeProductId: $0.storeProductId)
+            }
+            let controller = self.context.sharedContext.makeGiftOptionsController(context: self.context,
+                peerId: recipient.id, premiumOptions: premiumOptions, hasBirthday: false, completion: nil)
+            (self.navigationController as? NavigationController)?.pushViewController(controller)
+        }))
+    }
+
+    private func openNativeStarsGift() {
+        guard let recipient = self.recipient, let starsContext = self.context.starsContext else { return }
+        let controller = self.context.sharedContext.makeStarsPurchaseScreen(context: self.context,
+            starsContext: starsContext, options: [], purpose: .gift(peerId: recipient.id), targetPeerId: recipient.id,
+            customTheme: nil, completion: { [weak self] _ in
+                guard let self else { return }
+                let chat = self.context.sharedContext.makeChatController(context: self.context,
+                    chatLocation: .peer(id: recipient.id), subject: nil, botStart: nil, mode: .standard(.default), params: nil)
+                Queue.mainQueue().after(0.3) { [weak self] in
+                    (self?.navigationController as? NavigationController)?.pushViewController(chat)
+                }
+            })
+        (self.navigationController as? NavigationController)?.pushViewController(controller)
     }
 
     private func name(of peer: EnginePeer) -> String {

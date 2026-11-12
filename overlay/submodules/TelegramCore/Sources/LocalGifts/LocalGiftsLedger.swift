@@ -26,6 +26,9 @@ public struct LocalGiftReceipt: Codable, Equatable {
     public let cost: Int64
     public let balanceAfter: Int64
     public let giftData: Data?
+    public let text: String?
+    public let entitiesData: Data?
+    public let nameHidden: Bool?
 }
 
 /// Account-local display state. This model has no Telegram network or payment dependency.
@@ -74,7 +77,10 @@ public struct LocalGiftsLedger: Codable, Equatable {
         kind: LocalGiftReceipt.Kind,
         title: String,
         cost: Int64,
-        giftData: Data?
+        giftData: Data?,
+        text: String? = nil,
+        entitiesData: Data? = nil,
+        nameHidden: Bool? = nil
     ) throws -> LocalGiftReceipt {
         if let previous = self.receipts.first(where: { $0.id == requestId }) {
             return previous
@@ -102,7 +108,10 @@ public struct LocalGiftsLedger: Codable, Equatable {
             title: title,
             cost: cost,
             balanceAfter: nextBalance,
-            giftData: giftData
+            giftData: giftData,
+            text: text,
+            entitiesData: entitiesData,
+            nameHidden: nameHidden
         )
         self.lastSequence = receipt.sequence
         self.balance = nextBalance
