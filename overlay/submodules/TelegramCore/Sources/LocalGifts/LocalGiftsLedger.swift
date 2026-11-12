@@ -2,6 +2,7 @@ import Foundation
 
 public enum LocalGiftsError: Error, Equatable {
     case invalidAmount
+    case starsTransferTooLarge
     case insufficientBalance
     case unsupportedCurrency
     case exhaustedMessageIds
@@ -47,6 +48,7 @@ public struct LocalGiftsLedger: Codable, Equatable {
         var sequences = Set<Int32>()
         for receipt in self.receipts {
             guard receipt.cost > 0, receipt.balanceAfter >= 0,
+                  receipt.kind != .stars || receipt.cost <= Int64(Int32.max),
                   receipt.sequence > 0, receipt.sequence <= self.lastSequence,
                   ids.insert(receipt.id).inserted,
                   sequences.insert(receipt.sequence).inserted else {
@@ -79,6 +81,9 @@ public struct LocalGiftsLedger: Codable, Equatable {
         }
         guard cost > 0 else {
             throw LocalGiftsError.invalidAmount
+        }
+        if kind == .stars && cost > Int64(Int32.max) {
+            throw LocalGiftsError.starsTransferTooLarge
         }
         guard self.balance >= cost else {
             throw LocalGiftsError.insufficientBalance

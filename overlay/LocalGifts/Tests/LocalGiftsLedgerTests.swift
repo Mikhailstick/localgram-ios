@@ -56,6 +56,21 @@ final class LocalGiftsLedgerTests: XCTestCase {
         XCTAssertEqual(ledger.balance, 0)
     }
 
+    func testStarsPackageDoesNotOverflowTheNativeRenderer() throws {
+        var ledger = LocalGiftsLedger()
+        try ledger.setBalance(Int64.max)
+        let previous = ledger
+        XCTAssertThrowsError(try ledger.purchase(requestId: UUID(), recipientId: 42,
+            recipientName: "Кеша", timestamp: 1_700_000_000, kind: .stars, title: "Stars",
+            cost: Int64(Int32.max) + 1, giftData: nil)) {
+            XCTAssertEqual($0 as? LocalGiftsError, .starsTransferTooLarge)
+        }
+        XCTAssertEqual(ledger, previous)
+        _ = try ledger.purchase(requestId: UUID(), recipientId: 42, recipientName: "Кеша",
+            timestamp: 1_700_000_000, kind: .stars, title: "Stars", cost: Int64(Int32.max), giftData: nil)
+        XCTAssertEqual(ledger.balance, Int64.max - Int64(Int32.max))
+    }
+
     func testHidingVisualizationKeepsDebitAndNeverReusesSequence() throws {
         var ledger = LocalGiftsLedger()
         try ledger.setBalance(500)

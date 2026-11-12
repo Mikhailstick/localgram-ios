@@ -11,7 +11,8 @@ import TelegramPresentationData
 import UIKit
 
 private final class LocalGiftPreviewCell: UITableViewCell {
-    private let animation = ComponentView<Empty>()
+    private var animation = ComponentView<Empty>()
+    private var renderedFileId: Int64?
     private let titleLabel = UILabel()
     private let priceLabel = UILabel()
 
@@ -38,6 +39,11 @@ private final class LocalGiftPreviewCell: UITableViewCell {
                 if case let .model(_, file, _, _) = attribute { return file }
                 return nil
             }.first
+        }
+        if self.renderedFileId != file?.fileId.id {
+            self.animation.view?.removeFromSuperview()
+            self.animation = ComponentView<Empty>()
+            self.renderedFileId = file?.fileId.id
         }
         _ = self.animation.update(
             transition: .immediate,
@@ -155,7 +161,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
                 }
                 self.reload()
             }))
-            self.updateDisposable.set(self.context.engine.payments.keepStarGiftsUpdated().start())
+            self.updateCatalog()
         case let .marketplace(giftId):
             let resale = ResaleGiftsContext(account: self.context.account, giftId: giftId, forCrafting: false)
             self.resaleContext = resale
@@ -206,11 +212,20 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
 
     @objc private func refreshCatalog() {
         if let resaleContext = self.resaleContext {
-            self.table.refreshControl?.endRefreshing()
-            resaleContext.updateSorting(.date)
+            resaleContext.reload()
         } else {
-            self.updateDisposable.set(self.context.engine.payments.keepStarGiftsUpdated().start())
+            self.updateCatalog()
         }
+    }
+
+    private func updateCatalog() {
+        self.loading = true
+        self.updateDisposable.set((self.context.engine.payments.keepStarGiftsUpdated() |> deliverOnMainQueue).start(
+            completed: { [weak self] in
+                self?.loading = false
+                self?.reload()
+            }
+        ))
     }
 
     public func numberOfSections(in tableView: UITableView) -> Int { return self.isHome ? 4 : 1 }
@@ -430,6 +445,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         switch error {
         case LocalGiftsError.insufficientBalance: text = "Недостаточно виртуальных Stars. Измени баланс в разделе «Мои функции»."
         case LocalGiftsError.invalidAmount: text = "Введи целое положительное количество Stars. Баланс можно установить в ноль."
+        case LocalGiftsError.starsTransferTooLarge: text = "За одну отправку можно показать до 2 147 483 647 Stars. Виртуальный баланс может быть больше."
         case LocalGiftsError.unsupportedCurrency: text = "У подарка нет цены в Stars. Выбери предложение маркетплейса с ценой ★."
         case LocalGiftsError.unreadableStorage: text = "Не удалось прочитать локальные подарки. Можно сбросить их в разделе «Мои функции»."
         default: text = "Не удалось сохранить локальные данные. Баланс не был изменён."
