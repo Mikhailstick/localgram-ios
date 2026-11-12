@@ -52,7 +52,7 @@ index 9ad13cf..621e1c3 100644
          ":{}".format(name) for name in alternate_icon_folders
      ],
 diff --git a/build-system/Make/Make.py b/build-system/Make/Make.py
-index bb65a43..4d7f9a1 100644
+index bb65a43..8ec5648 100644
 --- a/build-system/Make/Make.py
 +++ b/build-system/Make/Make.py
 @@ -701,6 +701,15 @@ def build(bazel, arguments):
@@ -63,7 +63,7 @@ index bb65a43..4d7f9a1 100644
 +        if arguments.configuration not in ('debug_arm64', 'release_arm64'):
 +            raise Exception('--localGiftsUnsigned requires a device arm64 build.')
 +        bazel_command_line.common_build_args += [
-+            '--features=-apple.codesign',
++            '--features=disable_legacy_signing',
 +            '--//Telegram:disableProvisioningProfiles',
 +            '--//Telegram:disableExtensions',
 +        ]

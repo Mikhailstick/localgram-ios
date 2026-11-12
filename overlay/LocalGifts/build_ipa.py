@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from prepare_unsigned_rules import prepare_unsigned_rules
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,6 +58,7 @@ def main():
     configuration_path.chmod(0o600)
     try:
         subprocess.run(["swift", "test", "--package-path", str(ROOT)], cwd=ROOT, check=True)
+        prepare_unsigned_rules(ROOT)
         subprocess.run([
             sys.executable, "build-system/Make/Make.py",
             "--cacheDir", str(Path.home() / "localgram-bazel-cache"),
