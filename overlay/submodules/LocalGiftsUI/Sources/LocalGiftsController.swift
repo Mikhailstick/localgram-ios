@@ -328,7 +328,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case (2, _):
             let receipt = self.visibleReceipts[indexPath.row]
             let chat = self.context.sharedContext.makeChatController(context: self.context,
-                chatLocation: .peer(EnginePeer.Id(receipt.recipientId)), subject: nil, botStart: nil, mode: .standard(.default), params: nil)
+                chatLocation: .peer(id: EnginePeer.Id(receipt.recipientId)), subject: nil, botStart: nil, mode: .standard(.default), params: nil)
             (self.navigationController as? NavigationController)?.pushViewController(chat)
         default:
             self.confirm(title: "Сбросить мои функции?", message: "Виртуальный баланс станет нулевым, локальные подарки исчезнут.", destructive: true) { [weak self] in
