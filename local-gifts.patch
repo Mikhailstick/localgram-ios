@@ -188,10 +188,21 @@ index c5f58f4..904f3db 100644
              let proxyType: String
              if settings.proxySettings.enabled, let activeServer = settings.proxySettings.activeServer {
 diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
-index b1ea96b..c576e91 100644
+index b1ea96b..eaa1e68 100644
 --- a/submodules/TelegramUI/Sources/AppDelegate.swift
 +++ b/submodules/TelegramUI/Sources/AppDelegate.swift
-@@ -529,9 +529,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+@@ -290,7 +290,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         let appGroupName = "group.\(baseAppBundleId)"
+ 
+         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
+-        configuration.sharedContainerIdentifier = appGroupName
++        if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName) != nil {
++            configuration.sharedContainerIdentifier = appGroupName
++        }
+         configuration.isDiscretionary = false
+         let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
+         self.urlSessions.append(session)
+@@ -529,9 +531,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
          
          let baseAppBundleId = Bundle.main.bundleIdentifier!
          let appGroupName = "group.\(baseAppBundleId)"

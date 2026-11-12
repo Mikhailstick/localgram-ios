@@ -66,6 +66,7 @@ def main():
             "--configurationPath", str(configuration_path),
             "--xcodeManagedCodesigning",
             "--localGiftsUnsigned",
+            "--continueOnError",
             "--configuration", args.configuration,
             "--buildNumber", str(args.build_number),
         ], cwd=ROOT, check=True)
