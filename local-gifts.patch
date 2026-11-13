@@ -2076,7 +2076,7 @@ index e6cb356e..d39956e8 100644
                          products: state.products,
                          expanded: state.isExpanded,
 diff --git a/submodules/TelegramUI/Components/Stars/StarsTransactionScreen/Sources/StarsTransactionScreen.swift b/submodules/TelegramUI/Components/Stars/StarsTransactionScreen/Sources/StarsTransactionScreen.swift
-index bd911b8a..b35c1a3b 100644
+index bd911b8a..5d74dfec 100644
 --- a/submodules/TelegramUI/Components/Stars/StarsTransactionScreen/Sources/StarsTransactionScreen.swift
 +++ b/submodules/TelegramUI/Components/Stars/StarsTransactionScreen/Sources/StarsTransactionScreen.swift
 @@ -135,6 +135,11 @@ private final class StarsTransactionSheetContent: CombinedComponent {
@@ -2085,7 +2085,7 @@ index bd911b8a..b35c1a3b 100644
                      }
 +                    if case let .gift(message) = subject, LocalGiftsStore.isLocalMessage(message.id) {
 +                        for (peerId, peer) in message.peers where peersMap[peerId] == nil {
-+                            peersMap[peerId] = peer
++                            peersMap[peerId] = EnginePeer(peer)
 +                        }
 +                    }
                      strongSelf.peerMap = peersMap
@@ -2341,7 +2341,7 @@ index 5bf77c1b..82dc6c76 100644
              return
          }
 diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
-index 111f1754..e1db4be9 100644
+index 111f1754..3ba732dd 100644
 --- a/submodules/TelegramUI/Sources/ChatController.swift
 +++ b/submodules/TelegramUI/Sources/ChatController.swift
 @@ -885,6 +885,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
@@ -2349,7 +2349,7 @@ index 111f1754..e1db4be9 100644
          
          let controllerInteraction = ChatControllerInteraction(openMessage: { [weak self] message, params in
 +            if let self, LocalGiftsStore.isLocalMessage(message.id) {
-+                self.showLocalGiftReceipt(message: message, allowDelete: false)
++                self.showLocalGiftReceipt(message: EngineMessage(message), allowDelete: false)
 +                return true
 +            }
              guard let self, self.isNodeLoaded, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() else {

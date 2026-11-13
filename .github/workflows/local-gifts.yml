@@ -52,18 +52,6 @@ jobs:
           key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
-      - name: Render the LocalGram branding with UIKit
-        timeout-minutes: 5
-        continue-on-error: true
-        run: python3 client/LocalGifts/render_branding_preview.py
-      - name: Export the branding preview
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: LocalGram-branding-preview
-          path: client/LocalGifts/artifacts/branding
-          if-no-files-found: warn
-          retention-days: 7
       - name: Run ledger tests and compile the device IPA
         id: compile
         env:
