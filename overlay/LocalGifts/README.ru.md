@@ -4,8 +4,10 @@
 коммит `2a6b08272b7da893f88986846022bafd0727df89`, версия приложения 13.1.1.
 Исходные лицензии Telegram и GhostGram сохранены; код распространяется под GPL-2.0.
 
-**Сборка 6: перенос и проверка выполняются. Готовый IPA этой версии ещё не подтверждён.**
-Предыдущая проверенная версия — [LocalGram 12.9.2, сборка 5](https://github.com/Mikhailstick/localgram-ios/releases/tag/localgram-12.9.2-build5).
+**[LocalGram 13.1.1, сборка 6 — скачать IPA](https://github.com/Mikhailstick/localgram-ios/releases/tag/localgram-13.1.1-build6).**
+Полная сборка iOS ARM64 и 20 тестов балансов прошли; целостность IPA, версия и
+архитектура проверены. Запуск и интерфейс на iPhone ещё требуют проверки.
+Журнал сборки: [GitHub Actions](https://github.com/Mikhailstick/localgram-ios/actions/runs/43380338647).
 
 ## Функции
 
