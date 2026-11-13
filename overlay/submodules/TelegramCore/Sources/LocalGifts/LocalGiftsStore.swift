@@ -56,7 +56,15 @@ public final class LocalGiftsStore {
     private init(fileURL: URL) {
         self.fileURL = fileURL
         do {
-            self.ledger = try LocalGiftsPersistence.load(from: fileURL)
+            var ledger = try LocalGiftsPersistence.load(from: fileURL)
+            if ledger.needsMarketplacePurchaseMigration {
+                let purchasedIds = Set(ledger.receipts.compactMap { receipt -> Int64? in
+                    guard receipt.kind == .collectible, case let .unique(gift)? = Self.decodedGift(receipt) else { return nil }
+                    return gift.id
+                })
+                ledger.migrateMarketplacePurchases(purchasedIds)
+            }
+            self.ledger = ledger
             self.storageError = false
         } catch {
             // Preserve the unreadable file until the user explicitly resets local state.
@@ -74,6 +82,11 @@ public final class LocalGiftsStore {
         self.lock.lock()
         defer { self.lock.unlock() }
         return self.ledger
+    }
+
+    public func isMarketplaceGiftPurchased(_ gift: StarGift) -> Bool {
+        guard case let .unique(gift) = gift else { return false }
+        return self.snapshot().purchasedCollectibleIds.contains(gift.id)
     }
 
     /// Projects a local balance for a screen without changing the server StarsContext.
@@ -240,17 +253,20 @@ public final class LocalGiftsStore {
         let data = try JSONEncoder().encode(gift)
         let entitiesData = try entities.map { try JSONEncoder().encode($0) }
         let kind: LocalGiftReceipt.Kind
-        if case .unique = gift {
+        let collectibleId: Int64?
+        if case let .unique(uniqueGift) = gift {
             kind = .collectible
+            collectibleId = uniqueGift.id
         } else {
             kind = .gift
+            collectibleId = nil
         }
         var receipt: LocalGiftReceipt?
         try self.update {
             receipt = try $0.purchase(requestId: requestId, recipientId: recipientId.toInt64(), recipientName: recipientName,
                 timestamp: Int32(clamping: Int64(Date().timeIntervalSince1970)), kind: kind,
                 title: Self.title(for: gift), cost: price, giftData: data,
-                text: text, entitiesData: entitiesData, nameHidden: nameHidden, currency: currency)
+                text: text, entitiesData: entitiesData, nameHidden: nameHidden, currency: currency, collectibleId: collectibleId)
         }
         return receipt!
     }
@@ -272,6 +288,10 @@ public final class LocalGiftsStore {
 
     public func reset() throws {
         try self.update(reset: true) { _ in }
+    }
+
+    public func resetMarketplacePurchases() throws {
+        try self.update { $0.resetMarketplacePurchases() }
     }
 
     public func receipt(sequence: Int32, recipientId: EnginePeer.Id) -> LocalGiftReceipt? {

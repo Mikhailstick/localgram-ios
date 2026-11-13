@@ -7,7 +7,7 @@ on:
         description: "App build number; keep unchanged for compilation retries"
         type: number
         required: true
-        default: 6
+        default: 7
 
 permissions:
   contents: read
@@ -52,6 +52,17 @@ jobs:
           key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
+      - name: Render the LocalGram branding with UIKit
+        continue-on-error: true
+        run: python3 client/LocalGifts/render_branding_preview.py
+      - name: Export the branding preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalGram-branding-preview
+          path: client/LocalGifts/artifacts/branding
+          if-no-files-found: warn
+          retention-days: 7
       - name: Run ledger tests and compile the device IPA
         id: compile
         env:

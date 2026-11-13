@@ -2,31 +2,47 @@ import Foundation
 import SwiftSignalKit
 import TelegramCore
 import UIKit
+import Display
+import TelegramPresentationData
+import PresentationDataUtils
 
 extension ChatControllerImpl {
-    /// Local gift taps never enter the server-backed purchase, upgrade or transfer UI.
-    func showLocalGiftReceipt(messageId: EngineMessage.Id, allowDelete: Bool) {
+    /// Reuse Telegram's gift and operation sheets with display-only local data.
+    func showLocalGiftReceipt(message: EngineMessage, allowDelete: Bool) {
         let store = LocalGiftsStore.shared(accountPeerId: self.context.account.peerId)
-        guard let receipt = store.receipt(sequence: messageId.id, recipientId: messageId.peerId) else { return }
-        let cost = receipt.currency == .ton ? "\(LocalTonAmount.format(receipt.cost)) GRAM" : "\(receipt.cost) ★"
-        let balance = receipt.currency == .ton ? "\(LocalTonAmount.format(receipt.balanceAfter)) GRAM" : "\(receipt.balanceAfter) ★"
-        let alert = UIAlertController(
-            title: receipt.title,
-            message: "\(receipt.recipientName)\nСтоимость: \(cost)\nБаланс после отправки: \(balance)",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "Закрыть", style: .cancel))
-        if allowDelete {
-            alert.addAction(UIAlertAction(title: "Скрыть подарок", style: .destructive) { [weak self] _ in
-                do { try store.hideReceipt(receipt.id) } catch {
-                    Queue.mainQueue().after(0.3) { [weak self] in
-                        let errorAlert = UIAlertController(title: "Фейк-подарки", message: "Не удалось сохранить изменение.", preferredStyle: .alert)
-                        errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
-                        self?.present(errorAlert, animated: true)
-                    }
-                }
-            })
+        guard let receipt = store.receipt(sequence: message.id.id, recipientId: message.id.peerId) else { return }
+        let openDetails = { [weak self] in
+            guard let self else { return }
+            if receipt.kind == .stars {
+                self.push(self.context.sharedContext.makeStarsGiftScreen(context: self.context, message: message))
+            } else {
+                let controller = self.context.sharedContext.makeGiftViewScreen(context: self.context, message: message, shareStory: nil)
+                self.push(controller)
+            }
         }
-        self.present(alert, animated: true)
+        if allowDelete {
+            let sheet = ActionSheetController(presentationData: self.presentationData)
+            sheet.setItemGroups([
+                ActionSheetItemGroup(items: [
+                    ActionSheetButtonItem(title: "Подробнее", color: .accent, action: { [weak sheet] in
+                        sheet?.dismissAnimated()
+                        openDetails()
+                    }),
+                    ActionSheetButtonItem(title: "Скрыть подарок", color: .destructive, action: { [weak self, weak sheet] in
+                        sheet?.dismissAnimated()
+                        do { try store.hideReceipt(receipt.id) } catch {
+                            guard let self else { return }
+                            self.present(textAlertController(context: self.context, title: "Фейк-подарки", text: "Не удалось сохранить изменение.", actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                        }
+                    })
+                ]),
+                ActionSheetItemGroup(items: [ActionSheetButtonItem(title: self.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak sheet] in
+                    sheet?.dismissAnimated()
+                })])
+            ])
+            self.present(sheet, in: .window(.root))
+        } else {
+            openDetails()
+        }
     }
 }

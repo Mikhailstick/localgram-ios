@@ -8,6 +8,7 @@ public enum LocalGiftsError: Error, Equatable {
     case unsupportedCurrency
     case exhaustedMessageIds
     case unreadableStorage
+    case collectibleAlreadyPurchased
 }
 
 /// Stars are whole units; TON (GRAM in the local UI) is always stored in nanoTON.
@@ -79,6 +80,7 @@ public struct LocalGiftReceipt: Codable, Equatable {
     public let text: String?
     public let entitiesData: Data?
     public let nameHidden: Bool?
+    public let collectibleId: Int64?
 }
 
 /// Account-local display state. This model has no Telegram network or payment dependency.
@@ -87,16 +89,25 @@ public struct LocalGiftsLedger: Codable, Equatable {
     public private(set) var tonBalanceNano: Int64
     public private(set) var receipts: [LocalGiftReceipt]
     public private(set) var lastSequence: Int32
+    /// Purchased NFT identities outlive their chat/transaction visualization.
+    public private(set) var purchasedCollectibleIds: Set<Int64>
+    /// A new token makes every open marketplace reload its current server listings.
+    public private(set) var marketplaceResetId: UUID?
+    var needsMarketplacePurchaseMigration: Bool
 
     public init() {
         self.balance = 0
         self.tonBalanceNano = 0
         self.receipts = []
         self.lastSequence = 0
+        self.purchasedCollectibleIds = []
+        self.marketplaceResetId = nil
+        self.needsMarketplacePurchaseMigration = false
     }
 
     public func validate() throws {
-        guard self.balance >= 0, self.tonBalanceNano >= 0, self.lastSequence >= 0, self.lastSequence <= 1_000_000_000 else {
+        guard self.balance >= 0, self.tonBalanceNano >= 0, self.lastSequence >= 0, self.lastSequence <= 1_000_000_000,
+              self.purchasedCollectibleIds.allSatisfy({ $0 > 0 }) else {
             throw LocalGiftsError.unreadableStorage
         }
         var ids = Set<UUID>()
@@ -105,6 +116,7 @@ public struct LocalGiftsLedger: Codable, Equatable {
             guard receipt.cost > 0, receipt.balanceAfter >= 0,
                   receipt.kind != .stars || receipt.cost <= Int64(Int32.max),
                   receipt.currency != .ton || receipt.kind == .collectible,
+                  receipt.collectibleId == nil || (receipt.kind == .collectible && receipt.collectibleId! > 0),
                   receipt.sequence > 0, receipt.sequence <= self.lastSequence,
                   ids.insert(receipt.id).inserted,
                   sequences.insert(receipt.sequence).inserted else {
@@ -145,6 +157,24 @@ public struct LocalGiftsLedger: Codable, Equatable {
         }
     }
 
+    /// Reset only the local marketplace mask, leaving balances, gifts and history intact.
+    public mutating func resetMarketplacePurchases() {
+        self.purchasedCollectibleIds.removeAll()
+        self.marketplaceResetId = UUID()
+        self.needsMarketplacePurchaseMigration = false
+    }
+
+    /// Availability is always supplied by the current marketplace response, never by receipts.
+    public static func visibleMarketplaceCollectibleIds(in serverListingIds: [Int64], purchasedIds: Set<Int64>) -> Set<Int64> {
+        return Set(serverListingIds).subtracting(purchasedIds)
+    }
+
+    mutating func migrateMarketplacePurchases(_ ids: Set<Int64>) {
+        guard self.needsMarketplacePurchaseMigration else { return }
+        self.purchasedCollectibleIds.formUnion(ids.filter { $0 > 0 })
+        self.needsMarketplacePurchaseMigration = false
+    }
+
     private static func addingGrant(_ amount: Int64, to balance: Int64) throws -> Int64 {
         guard amount > 0 else {
             throw LocalGiftsError.invalidAmount
@@ -170,7 +200,8 @@ public struct LocalGiftsLedger: Codable, Equatable {
         text: String? = nil,
         entitiesData: Data? = nil,
         nameHidden: Bool? = nil,
-        currency: LocalGiftCurrency = .stars
+        currency: LocalGiftCurrency = .stars,
+        collectibleId: Int64? = nil
     ) throws -> LocalGiftReceipt {
         if let previous = self.receipts.first(where: { $0.id == requestId }) {
             return previous
@@ -180,6 +211,14 @@ public struct LocalGiftsLedger: Codable, Equatable {
         }
         guard currency != .ton || kind == .collectible else {
             throw LocalGiftsError.unsupportedCurrency
+        }
+        if let collectibleId {
+            guard kind == .collectible, collectibleId > 0 else {
+                throw LocalGiftsError.invalidAmount
+            }
+            guard !self.purchasedCollectibleIds.contains(collectibleId) else {
+                throw LocalGiftsError.collectibleAlreadyPurchased
+            }
         }
         if kind == .stars && cost > Int64(Int32.max) {
             throw LocalGiftsError.starsTransferTooLarge
@@ -206,7 +245,8 @@ public struct LocalGiftsLedger: Codable, Equatable {
             giftData: giftData,
             text: text,
             entitiesData: entitiesData,
-            nameHidden: nameHidden
+            nameHidden: nameHidden,
+            collectibleId: collectibleId
         )
         self.lastSequence = receipt.sequence
         if currency == .ton {
@@ -215,6 +255,9 @@ public struct LocalGiftsLedger: Codable, Equatable {
             self.balance = nextBalance
         }
         self.receipts.append(receipt)
+        if let collectibleId {
+            self.purchasedCollectibleIds.insert(collectibleId)
+        }
         return receipt
     }
 
@@ -227,7 +270,7 @@ public struct LocalGiftsLedger: Codable, Equatable {
 extension LocalGiftReceipt {
     private enum CodingKeys: String, CodingKey {
         case id, sequence, recipientId, recipientName, timestamp, kind, currency, title, cost, balanceAfter
-        case giftData, text, entitiesData, nameHidden
+        case giftData, text, entitiesData, nameHidden, collectibleId
     }
 
     public init(from decoder: Decoder) throws {
@@ -246,12 +289,13 @@ extension LocalGiftReceipt {
         self.text = try container.decodeIfPresent(String.self, forKey: .text)
         self.entitiesData = try container.decodeIfPresent(Data.self, forKey: .entitiesData)
         self.nameHidden = try container.decodeIfPresent(Bool.self, forKey: .nameHidden)
+        self.collectibleId = try container.decodeIfPresent(Int64.self, forKey: .collectibleId)
     }
 }
 
 extension LocalGiftsLedger {
     private enum CodingKeys: String, CodingKey {
-        case balance, tonBalanceNano, receipts, lastSequence
+        case balance, tonBalanceNano, receipts, lastSequence, purchasedCollectibleIds, marketplaceResetId, needsMarketplacePurchaseMigration
     }
 
     public init(from decoder: Decoder) throws {
@@ -260,6 +304,9 @@ extension LocalGiftsLedger {
         self.tonBalanceNano = try container.decodeIfPresent(Int64.self, forKey: .tonBalanceNano) ?? 0
         self.receipts = try container.decode([LocalGiftReceipt].self, forKey: .receipts)
         self.lastSequence = try container.decode(Int32.self, forKey: .lastSequence)
+        self.purchasedCollectibleIds = try container.decodeIfPresent(Set<Int64>.self, forKey: .purchasedCollectibleIds) ?? []
+        self.marketplaceResetId = try container.decodeIfPresent(UUID.self, forKey: .marketplaceResetId)
+        self.needsMarketplacePurchaseMigration = try container.decodeIfPresent(Bool.self, forKey: .needsMarketplacePurchaseMigration) ?? !container.contains(.purchasedCollectibleIds)
     }
 }
 

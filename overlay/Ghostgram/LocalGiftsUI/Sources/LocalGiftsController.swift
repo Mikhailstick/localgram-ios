@@ -74,6 +74,22 @@ private final class LocalGiftPreviewCell: UITableViewCell {
     }
 }
 
+/// Stable targets shared by the LocalGram menu and Telegram's settings search.
+public enum LocalGiftsSearchTarget: String {
+    case starsBalance
+    case gramBalance
+    case recipient
+    case sendStars
+    case giftCatalog
+    case marketplace
+    case starsHistory
+    case gramHistory
+    case giftLink
+    case history
+    case reset
+    case marketplaceReset
+}
+
 @available(iOS 14.0, *)
 public final class LocalGiftsController: ViewController, UITableViewDataSource, UITableViewDelegate {
     private enum Mode {
@@ -93,15 +109,20 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
     private let updateDisposable = MetaDisposable()
     private let selectionDisposable = MetaDisposable()
     private let lookupDisposable = MetaDisposable()
+    private let purchaseDisposable = MetaDisposable()
+    private var purchaseInProgress = false
     private var resaleContext: ResaleGiftsContext?
     private var ledger: LocalGiftsLedger
     private var recipient: EnginePeer?
     private var gifts: [StarGift] = []
     private var loading = true
     private var canLoadMore = false
+    private var searchTarget: LocalGiftsSearchTarget?
+    private var didApplySearchTarget = false
 
-    public convenience init(context: AccountContext) {
+    public convenience init(context: AccountContext, searchTarget: LocalGiftsSearchTarget? = nil) {
         self.init(context: context, mode: .home, recipient: nil)
+        self.searchTarget = searchTarget
     }
 
     private init(context: AccountContext, mode: Mode, recipient: EnginePeer?) {
@@ -134,6 +155,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.updateDisposable.dispose()
         self.selectionDisposable.dispose()
         self.lookupDisposable.dispose()
+        self.purchaseDisposable.dispose()
     }
 
     public override func loadDisplayNode() {
@@ -186,6 +208,45 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.table.contentInset.bottom = layout.intrinsicInsets.bottom
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard self.isHome, !self.didApplySearchTarget, let target = self.searchTarget else {
+            return
+        }
+        self.didApplySearchTarget = true
+        if target == .history {
+            self.table.scrollRectToVisible(self.table.rectForHeader(inSection: 2), animated: true)
+            return
+        }
+        let indexPath: IndexPath
+        switch target {
+        case .starsBalance: indexPath = IndexPath(row: 0, section: 0)
+        case .gramBalance: indexPath = IndexPath(row: 3, section: 0)
+        case .recipient: indexPath = IndexPath(row: 1, section: 0)
+        case .sendStars: indexPath = IndexPath(row: 2, section: 0)
+        case .giftCatalog: indexPath = IndexPath(row: 0, section: 1)
+        case .marketplace: indexPath = IndexPath(row: 1, section: 1)
+        case .starsHistory: indexPath = IndexPath(row: 2, section: 1)
+        case .gramHistory: indexPath = IndexPath(row: 3, section: 1)
+        case .giftLink: indexPath = IndexPath(row: 4, section: 1)
+        case .reset: indexPath = IndexPath(row: 0, section: 3)
+        case .marketplaceReset: indexPath = IndexPath(row: 1, section: 3)
+        case .history: return
+        }
+        self.table.scrollToRow(at: indexPath, at: .middle, animated: false)
+        if target == .reset || target == .marketplaceReset {
+            // Finding a reset highlights its button; it never resets or opens a confirmation.
+            self.table.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.table.deselectRow(at: indexPath, animated: true)
+            }
+            return
+        }
+        // The original row handler opens the exact editor, picker or gift screen.
+        // Search never writes a balance or sends a gift on its own.
+        self.tableView(self.table, didSelectRowAt: indexPath)
+    }
+
     private var isHome: Bool { if case .home = self.mode { return true }; return false }
     private var visibleReceipts: [LocalGiftReceipt] { return Array(self.ledger.receipts.reversed()) }
 
@@ -236,6 +297,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case 0: return 4
         case 1: return 5
         case 2: return self.visibleReceipts.count
+        case 3: return 2
         default: return 1
         }
     }
@@ -248,6 +310,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
     public func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if self.isHome && section == 1 { return "Баланс и отправленные подарки видны только тебе в этом клиенте." }
         if self.isHome && section == 2 && self.ledger.receipts.isEmpty { return "Отправленные подарки появятся здесь и в выбранной переписке." }
+        if self.isHome && section == 3 { return "Сброс покупок в маркете возвращает только актуальные предложения площадки. Балансы и история сохраняются." }
         return nil
     }
 
@@ -287,6 +350,11 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
                 content.secondaryText = "\(receipt.recipientName) · −\(cost) · остаток \(balance)"
                 content.secondaryTextProperties.numberOfLines = 2
                 content.image = UIImage(systemName: receipt.kind == .stars ? "star.fill" : "gift.fill")
+            case (3, 1):
+                content.text = "Сбросить покупки в маркете"
+                content.secondaryText = "Вернуть доступные NFT в каталог"
+                content.image = UIImage(systemName: "arrow.clockwise")
+                cell.accessoryType = .none
             default:
                 content.text = "Сбросить локальные подарки и баланс"
                 content.textProperties.color = .systemRed
@@ -338,6 +406,10 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             let chat = self.context.sharedContext.makeChatController(context: self.context,
                 chatLocation: .peer(id: EnginePeer.Id(receipt.recipientId)), subject: nil, botStart: nil, mode: .standard(.default), params: nil)
             (self.navigationController as? NavigationController)?.pushViewController(chat)
+        case (3, 1):
+            self.confirm(title: "Сбросить покупки в маркете?", message: "Купленные локально NFT снова появятся, если ещё доступны на площадке. Балансы, подарки и история сохранятся.", destructive: false, confirmTitle: "Сбросить") { [weak self] in
+                self?.perform { try self?.store.resetMarketplacePurchases() }
+            }
         default:
             self.confirm(title: "Сбросить фейк-подарки?", message: "Виртуальный баланс станет нулевым, локальные подарки исчезнут.", destructive: true) { [weak self] in
                 self?.perform { try self?.store.reset() }
@@ -417,7 +489,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
     }
 
     private func confirmGift(_ gift: StarGift, currency: LocalGiftCurrency? = nil) {
-        guard let recipient = self.recipient else { return }
+        guard !self.purchaseInProgress, let recipient = self.recipient else { return }
         let starsPrice = LocalGiftsStore.starsPrice(for: gift)
         let tonPrice = LocalGiftsStore.tonPriceNano(for: gift)
         if currency == nil, let starsPrice, let tonPrice {
@@ -438,6 +510,26 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         let requestId = UUID()
         self.confirm(title: LocalGiftsStore.title(for: gift), message: "\(self.name(of: recipient))\nСтоимость: \(priceText)", destructive: false) { [weak self] in
             guard let self else { return }
+            if case let .unique(uniqueGift) = gift {
+                guard !self.purchaseInProgress else { return }
+                self.purchaseInProgress = true
+                self.purchaseDisposable.set((self.context.engine.payments.getUniqueStarGift(slug: uniqueGift.slug)
+                |> deliverOnMainQueue).start(next: { [weak self] currentGift in
+                    guard let self else { return }
+                    self.purchaseInProgress = false
+                    let current = StarGift.unique(currentGift)
+                    let currentPrice = selectedCurrency == .stars ? LocalGiftsStore.starsPrice(for: current) : LocalGiftsStore.tonPriceNano(for: current)
+                    guard currentGift.id == uniqueGift.id, currentPrice == price else {
+                        self.showMessage("Предложение больше недоступно по этой цене. Обнови маркет и выбери доступный NFT.")
+                        return
+                    }
+                    self.perform { _ = try self.store.sendGift(current, recipientId: recipient.id, recipientName: self.name(of: recipient), requestId: requestId, priceOverride: price, currency: selectedCurrency) }
+                }, error: { [weak self] _ in
+                    self?.purchaseInProgress = false
+                    self?.showMessage("Не удалось проверить доступность NFT. Проверь соединение и обнови маркет.")
+                }))
+                return
+            }
             self.perform { _ = try self.store.sendGift(gift, recipientId: recipient.id, recipientName: self.name(of: recipient), requestId: requestId, currency: selectedCurrency) }
         }
     }
@@ -486,10 +578,10 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.present(alert, animated: true)
     }
 
-    private func confirm(title: String, message: String, destructive: Bool, action: @escaping () -> Void) {
+    private func confirm(title: String, message: String, destructive: Bool, confirmTitle: String? = nil, action: @escaping () -> Void) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-        alert.addAction(UIAlertAction(title: destructive ? "Сбросить" : "Отправить", style: destructive ? .destructive : .default) { _ in action() })
+        alert.addAction(UIAlertAction(title: confirmTitle ?? (destructive ? "Сбросить" : "Отправить"), style: destructive ? .destructive : .default) { _ in action() })
         self.present(alert, animated: true)
     }
 
@@ -504,6 +596,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case LocalGiftsError.invalidAmount: text = "Введи целое положительное количество Stars. Баланс можно установить в ноль."
         case LocalGiftsError.starsTransferTooLarge: text = "За одну отправку можно показать до 2 147 483 647 Stars. Виртуальный баланс может быть больше."
         case LocalGiftsError.unsupportedCurrency: text = "У подарка нет цены в Stars или GRAM. Выбери предложение на продажу в маркетплейсе."
+        case LocalGiftsError.collectibleAlreadyPurchased: text = "Этот NFT уже куплен. Вернуть доступные предложения можно кнопкой сброса покупок в маркете."
         case LocalGiftsError.unreadableStorage: text = "Не удалось прочитать локальные подарки. Можно сбросить их в разделе «Фейк-подарки»."
         default: text = "Не удалось сохранить локальные данные. Баланс не был изменён."
         }
