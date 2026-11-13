@@ -4,6 +4,7 @@ Needs macOS, Xcode/iOS Simulator, ffmpeg, ffprobe and Pillow. Recorded frame
 timestamps come from ffprobe; this does not test the full app's cutout position.
 """
 import csv
+from datetime import datetime, timezone
 import hashlib
 import json
 import platform
@@ -49,6 +50,67 @@ def run(*args, timeout=150):
     except subprocess.CalledProcessError as error:
         print(error.output, flush=True)
         raise
+
+
+def progress(output, stage, **details):
+    entry = {"time_utc": datetime.now(timezone.utc).isoformat(), "stage": stage, **details}
+    message = entry["time_utc"] + " " + stage
+    if details:
+        message += " " + json.dumps(details, ensure_ascii=False)
+    print(message, flush=True)
+    with (output / "progress.log").open("a", encoding="utf-8") as journal:
+        journal.write(message + "\n")
+    (output / "progress.json").write_text(json.dumps(entry, indent=2), encoding="utf-8")
+
+
+def run_logged(output, stage, *args, timeout):
+    """Keep subprocess output on disk while waiting; cold boots can be quiet."""
+    log = output / (stage + ".log")
+    progress(output, stage + " started", timeout_seconds=timeout, log=log.name)
+    started = time.monotonic()
+    with log.open("w", encoding="utf-8") as stream:
+        process = subprocess.Popen(args, stdout=stream, stderr=subprocess.STDOUT)
+        try:
+            while True:
+                remaining = timeout - (time.monotonic() - started)
+                if remaining <= 0:
+                    process.kill()
+                    process.wait(timeout=10)
+                    raise TimeoutError(stage + " exceeded " + str(timeout) + " seconds; see " + log.name)
+                try:
+                    code = process.wait(timeout=min(15, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    lines = log.read_text(errors="replace").splitlines()
+                    progress(output, stage + " waiting", elapsed_seconds=round(time.monotonic() - started, 1),
+                        output_tail=lines[-1][-500:] if lines else "No subprocess output yet")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    elapsed = round(time.monotonic() - started, 1)
+    progress(output, stage + " finished", elapsed_seconds=elapsed, exit_code=code)
+    if code != 0:
+        raise RuntimeError(stage + " failed with exit " + str(code) + "; see " + log.name)
+    return log.read_text(errors="replace").strip()
+
+
+def simulator_diagnostics(output, device):
+    """Read durable state with bounded commands before disposing our simulator."""
+    commands = [
+        ("diagnostic-devices.json", ["xcrun", "simctl", "list", "devices", "--json"]),
+        ("diagnostic-runtime-processes.log", ["/usr/bin/pgrep", "-lf", "CoreSimulator|simctl|launchd_sim|SpringBoard|installd"]),
+        ("diagnostic-simulator.log", ["/usr/bin/log", "show", "--last", "5m", "--style", "compact", "--predicate", 'subsystem BEGINSWITH "com.apple.CoreSimulator"']),
+    ]
+    progress(output, "Collecting simulator diagnostics", device=device)
+    for name, command in commands:
+        with (output / name).open("w", encoding="utf-8") as stream:
+            try:
+                subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, check=False, timeout=15)
+            except subprocess.TimeoutExpired:
+                stream.write("\nDiagnostic command timed out after 15 seconds.\n")
+            except OSError as error:
+                stream.write("\n" + str(error) + "\n")
 
 
 def function(source, name):
@@ -327,9 +389,17 @@ def main():
     available = [item for item in runtimes if item.get("isAvailable") and ".iOS-" in item["identifier"]]
     types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
     sdk_version = tuple(map(int, run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version").split(".")))
+    (output / "simulator-runtimes.json").write_text(json.dumps(runtimes, indent=2), encoding="utf-8")
+    (output / "simulator-device-types.json").write_text(json.dumps(types, indent=2), encoding="utf-8")
     runtime = None
     device_type = None
-    for candidate in sorted(available, key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True):
+    # Prefer the latest installed previous-major runtime for this UIKit bitmap
+    # check. Fresh major runtimes can spend several minutes on first boot in CI.
+    # Keep using only a compatible, available pair and report the exact choice.
+    def preference(item):
+        version = tuple(map(int, item["version"].split(".")))
+        return version[0] == sdk_version[0] - 1, version
+    for candidate in sorted(available, key=preference, reverse=True):
         if tuple(map(int, candidate["version"].split("."))) > sdk_version or not re.search(r"\.iOS-\d+-\d+(?:-\d+)?$", candidate["identifier"]):
             continue
         supported_ids = {item["identifier"] if isinstance(item, dict) else item for item in candidate.get("supportedDeviceTypes", [])}
@@ -342,8 +412,10 @@ def main():
         break
     if runtime is None:
         raise RuntimeError("No compatible installed iPhone simulator runtime/type pair.")
-    print("Rendering on " + device_type + " with " + runtime, flush=True)
-    device = run("xcrun", "simctl", "create", "LocalGram branding preview", device_type, runtime)
+    progress(output, "Creating disposable simulator", device_type=device_type, runtime=runtime)
+    device = run_logged(output, "create", "xcrun", "simctl", "create", "LocalGram branding preview", device_type, runtime, timeout=60)
+    (output / "simulator-selection.json").write_text(json.dumps({"device": device, "device_type": device_type,
+        "runtime": runtime, "sdk_version": sdk_version, "preference": "installed previous-major runtime when compatible"}, indent=2), encoding="utf-8")
     try:
         with tempfile.TemporaryDirectory(prefix="localgram-branding-") as scratch:
             app = Path(scratch) / "Preview.app"
@@ -353,23 +425,28 @@ def main():
             info = {"CFBundleIdentifier": "dev.localgram.brandingpreview", "CFBundleExecutable": "Preview", "CFBundleName": "Preview", "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0", "CFBundlePackageType": "APPL", "MinimumOSVersion": "15.0", "UIDeviceFamily": [1], "LSRequiresIPhoneOS": True, "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "UILaunchScreen": {}, "UIApplicationSceneManifest": {"UIApplicationSupportsMultipleScenes": False, "UISceneConfigurations": {"UIWindowSceneSessionRoleApplication": [{"UISceneConfigurationName": "Default", "UISceneDelegateClassName": "PreviewSceneDelegate"}]}}}
             (app / "Info.plist").write_bytes(plistlib.dumps(info))
             sdk = run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path")
+            progress(output, "Compiling extracted production UIKit renderers")
             subprocess.run(["xcrun", "--sdk", "iphonesimulator", "swiftc", "-sdk", sdk, "-target", "arm64-apple-ios15.0-simulator", "-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift", str(swift), "-o", str(app / "Preview")], check=True, timeout=120)
             subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True, timeout=30)
-            run("xcrun", "simctl", "boot", device)
-            run("xcrun", "simctl", "bootstatus", device, "-b", timeout=240)
-            run("xcrun", "simctl", "install", device, str(app))
-            container = Path(run("xcrun", "simctl", "get_app_container", device, info["CFBundleIdentifier"], "data"))
+            run_logged(output, "boot", "xcrun", "simctl", "boot", device, timeout=90)
+            run_logged(output, "bootstatus", "xcrun", "simctl", "bootstatus", device, "-b", timeout=300)
+            run_logged(output, "install", "xcrun", "simctl", "install", device, str(app), timeout=120)
+            container = Path(run_logged(output, "container", "xcrun", "simctl", "get_app_container", device,
+                info["CFBundleIdentifier"], "data", timeout=30))
             with (output / "recording.log").open("w") as recording_log, (output / "console.log").open("w") as console_log:
+                progress(output, "Starting passive simulator recording")
                 recording = subprocess.Popen(["xcrun", "simctl", "io", device, "recordVideo", "--codec=h264", "--force", str(output / "branding.mp4")], stdout=recording_log, stderr=recording_log)
                 launcher = None
                 try:
                     recording_ready(recording, output / "recording.log")
+                    progress(output, "Launching native appearance preview")
                     launcher = subprocess.Popen(["xcrun", "simctl", "launch", "--console", device, info["CFBundleIdentifier"]], stdout=console_log, stderr=console_log)
                     deadline = time.monotonic() + 45
                     while not (container / "Documents/preview-complete.json").exists():
                         if time.monotonic() >= deadline:
                             raise TimeoutError("Native preview did not complete all appearance variants.")
                         time.sleep(0.2)
+                    progress(output, "All appearance variants rendered")
                     time.sleep(0.5)
                     run("xcrun", "simctl", "io", device, "screenshot", str(output / "simulator.png"))
                 finally:
@@ -387,14 +464,22 @@ def main():
         if len(descriptors) != len(VARIANTS) or any(item["bitmap_width_points"] != 93 or item["bitmap_height_points"] != 22 for item in descriptors):
             raise ValueError("Production badge canvas changed or an appearance variant is missing.")
         metadata = json.loads((output / "preview-complete.json").read_text())
+        progress(output, "Extracting recorded frames with ffprobe presentation times")
         frame_sheet(output, metadata)
         metadata.update({"runtime": runtime, "device_type": device_type, "production_source_sha256": hashlib.sha256(source.encode()).hexdigest(),
             "recording": "branding.mp4", "frame_contact_sheets": "frames/sheet-*.png", "frame_timestamps": "frames.tsv",
             "timestamp_source": "ffprobe frame pts_time; no fixed-rate resampling", "scope": "UIKit bitmap and host appearance; full app placement untested"})
         (output / "preview-verification.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        print("Rendered production appearance variants and ffprobe-labelled native simulator frames.")
+        progress(output, "Rendered production appearance and labelled native frames")
+    except BaseException as error:
+        (output / "failure.json").write_text(json.dumps({"error_type": type(error).__name__, "error": str(error),
+            "device": device, "runtime": runtime}, indent=2), encoding="utf-8")
+        progress(output, "Preview failed", error_type=type(error).__name__, error=str(error))
+        simulator_diagnostics(output, device)
+        raise
     finally:
         for operation in ("shutdown", "delete"):
+            print("Cleaning up disposable simulator: " + operation, flush=True)
             try:
                 subprocess.run(["xcrun", "simctl", operation, device], check=False, timeout=20)
             except subprocess.TimeoutExpired:
