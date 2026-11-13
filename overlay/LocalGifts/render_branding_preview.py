@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(*args):
+def run(*args, timeout=150):
     try:
-        return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, timeout=150).strip()
+        return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, timeout=timeout).strip()
     except subprocess.CalledProcessError as error:
         print(error.output, flush=True)
         raise
@@ -100,16 +100,21 @@ UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromCla
     runtimes = json.loads(run("xcrun", "simctl", "list", "runtimes", "--json"))["runtimes"]
     available = [item for item in runtimes if item.get("isAvailable") and ".iOS-" in item["identifier"]]
     types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
+    sdk_version = tuple(map(int, run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version").split(".")))
     runtime = None
     device_type = None
     for candidate in sorted(available, key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True):
+        if tuple(map(int, candidate["version"].split("."))) > sdk_version:
+            continue
+        if not re.search(r"\.iOS-\d+-\d+(?:-\d+)?$", candidate["identifier"]):
+            continue
         supported = candidate.get("supportedDeviceTypes", [])
         supported_ids = {item["identifier"] if isinstance(item, dict) else item for item in supported}
         # Some beta runtimes are restricted to one new iPhone model. Do not pair those
         # with a device selected independently from CoreSimulator's type inventory.
         if not supported_ids and not re.search(r"\.iOS-\d+-\d+(?:-\d+)?$", candidate["identifier"]):
             continue
-        compatible = [item for item in types if item["name"].startswith("iPhone") and (not supported_ids or item["identifier"] in supported_ids)]
+        compatible = [item for item in types if item["name"].startswith("iPhone") and "Duo" not in item["name"] and (not supported_ids or item["identifier"] in supported_ids)]
         if not compatible:
             continue
         preferred = next((item for item in compatible if item["name"] == "iPhone 17 Pro"), None)
@@ -129,10 +134,10 @@ UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromCla
             info = {"CFBundleIdentifier": "dev.localgram.brandingpreview", "CFBundleExecutable": "Preview", "CFBundleName": "Preview", "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0", "CFBundlePackageType": "APPL", "MinimumOSVersion": "15.0", "UIDeviceFamily": [1], "LSRequiresIPhoneOS": True, "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "UILaunchScreen": {}, "UIApplicationSceneManifest": {"UIApplicationSupportsMultipleScenes": False, "UISceneConfigurations": {"UIWindowSceneSessionRoleApplication": [{"UISceneConfigurationName": "Default", "UISceneDelegateClassName": "PreviewSceneDelegate"}]}}}
             (app / "Info.plist").write_bytes(plistlib.dumps(info))
             sdk = run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path")
-            subprocess.run(["xcrun", "swiftc", "-sdk", sdk, "-target", "arm64-apple-ios15.0-simulator", "-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift", str(swift), "-o", str(app / "Preview")], check=True, timeout=120)
+            subprocess.run(["xcrun", "--sdk", "iphonesimulator", "swiftc", "-sdk", sdk, "-target", "arm64-apple-ios15.0-simulator", "-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift", str(swift), "-o", str(app / "Preview")], check=True, timeout=120)
             subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True, timeout=30)
             run("xcrun", "simctl", "boot", device)
-            run("xcrun", "simctl", "bootstatus", device, "-b")
+            run("xcrun", "simctl", "bootstatus", device, "-b", timeout=240)
             run("xcrun", "simctl", "install", device, str(app))
             container = Path(run("xcrun", "simctl", "get_app_container", device, info["CFBundleIdentifier"], "data"))
             with (output / "recording.log").open("w") as recording_log, (output / "console.log").open("w") as console_log:
