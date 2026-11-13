@@ -4,7 +4,6 @@ import ComponentFlow
 import Display
 import Foundation
 import GiftAnimationComponent
-import Postbox
 import SwiftSignalKit
 import TelegramCore
 import TelegramPresentationData
@@ -57,10 +56,11 @@ private final class LocalGiftPreviewCell: UITableViewCell {
         self.titleLabel.text = LocalGiftsStore.title(for: gift)
         if marketplaceType {
             self.priceLabel.text = "Открыть коллекционные варианты"
-        } else if let price = LocalGiftsStore.starsPrice(for: gift) {
-            self.priceLabel.text = "★ \(price)"
         } else {
-            self.priceLabel.text = "Нет цены в Stars"
+            var prices: [String] = []
+            if let price = LocalGiftsStore.starsPrice(for: gift) { prices.append("★ \(price)") }
+            if let price = LocalGiftsStore.tonPriceNano(for: gift) { prices.append("\(LocalTonAmount.format(price)) GRAM") }
+            self.priceLabel.text = prices.isEmpty ? "Нет предложения на продажу" : prices.joined(separator: " · ")
         }
         self.setNeedsLayout()
     }
@@ -115,7 +115,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.overrideUserInterfaceStyle = self.presentationData.theme.overallDarkAppearance ? .dark : .light
         self.table.backgroundColor = self.presentationData.theme.list.blocksBackgroundColor
         switch mode {
-        case .home: self.title = "Мои функции"
+        case .home: self.title = "Фейк-подарки"
         case .regular: self.title = "Подарки"
         case .marketplaceTypes: self.title = "NFT-маркетплейс"
         case .marketplace: self.title = "Коллекционные подарки"
@@ -165,10 +165,10 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case let .marketplace(giftId):
             let resale = ResaleGiftsContext(account: self.context.account, giftId: giftId, forCrafting: false)
             self.resaleContext = resale
-            resale.updateStarsOnly(true)
+            resale.updateStarsOnly(false)
             self.catalogDisposable.set((resale.state |> deliverOnMainQueue).start(next: { [weak self] state in
                 guard let self else { return }
-                self.gifts = state.gifts.filter { LocalGiftsStore.starsPrice(for: $0) != nil }
+                self.gifts = state.gifts.filter { LocalGiftsStore.starsPrice(for: $0) != nil || LocalGiftsStore.tonPriceNano(for: $0) != nil }
                 switch state.dataState {
                 case .loading: self.loading = true; self.canLoadMore = false
                 case let .ready(canLoadMore, _): self.loading = false; self.canLoadMore = canLoadMore
@@ -233,16 +233,16 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !self.isHome { return self.gifts.count + (self.canLoadMore ? 1 : 0) }
         switch section {
-        case 0: return 3
-        case 1: return 3
+        case 0: return 4
+        case 1: return 5
         case 2: return self.visibleReceipts.count
         default: return 1
         }
     }
 
     public func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        if !self.isHome { return self.recipient.map { "Для \(self.name(of: $0)) · ★ \(self.ledger.balance)" } }
-        return ["Звёзды", "Подарки", "История", nil][section]
+        if !self.isHome { return self.recipient.map { "Для \(self.name(of: $0)) · ★ \(self.ledger.balance) · \(LocalTonAmount.format(self.ledger.tonBalanceNano)) GRAM" } }
+        return ["Баланс", "Подарки", "История", nil][section]
     }
 
     public func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
@@ -273,13 +273,18 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             case (0, 0): content.text = "★ \(self.ledger.balance)"; content.secondaryText = "Изменить баланс Stars"; content.image = UIImage(systemName: "star.fill")
             case (0, 1): content.text = "Получатель"; content.secondaryText = self.recipient.map(self.name) ?? "Выбрать человека"; content.image = UIImage(systemName: "person.crop.circle")
             case (0, 2): content.text = "Отправить звёзды"; content.image = UIImage(systemName: "star.circle")
+            case (0, 3): content.text = "\(LocalTonAmount.format(self.ledger.tonBalanceNano)) GRAM"; content.secondaryText = "Изменить баланс GRAM (TON)"; content.image = UIImage(systemName: "diamond.fill")
             case (1, 0): content.text = "Меню подарков"; content.image = UIImage(systemName: "gift.fill")
             case (1, 1): content.text = "NFT через маркетплейс"; content.image = UIImage(systemName: "sparkles")
             case (1, 2): content.text = "Мои звёзды"; content.image = UIImage(systemName: "star.circle")
+            case (1, 3): content.text = "Мои GRAM"; content.image = UIImage(systemName: "diamond")
+            case (1, 4): content.text = "NFT по ссылке"; content.image = UIImage(systemName: "link")
             case (2, _):
                 let receipt = self.visibleReceipts[indexPath.row]
                 content.text = receipt.title
-                content.secondaryText = "\(receipt.recipientName) · −\(receipt.cost) ★ · остаток \(receipt.balanceAfter)"
+                let cost = receipt.currency == .ton ? "\(LocalTonAmount.format(receipt.cost)) GRAM" : "\(receipt.cost) ★"
+                let balance = receipt.currency == .ton ? LocalTonAmount.format(receipt.balanceAfter) : "\(receipt.balanceAfter)"
+                content.secondaryText = "\(receipt.recipientName) · −\(cost) · остаток \(balance)"
                 content.secondaryTextProperties.numberOfLines = 2
                 content.image = UIImage(systemName: receipt.kind == .stars ? "star.fill" : "gift.fill")
             default:
@@ -309,6 +314,10 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             self.requestAmount(title: "Баланс Stars", initial: "\(self.ledger.balance)") { [weak self] amount in
                 self?.perform { try self?.store.setBalance(amount) }
             }
+        case (0, 3):
+            self.requestAmount(title: "Баланс GRAM (TON)", initial: LocalTonAmount.format(self.ledger.tonBalanceNano), currency: .ton) { [weak self] amount in
+                self?.perform { try self?.store.setTonBalanceNano(amount) }
+            }
         case (0, 1): self.chooseRecipient {}
         case (0, 2):
             self.withRecipient { [weak self] in
@@ -319,13 +328,18 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             guard let starsContext = self.context.starsContext else { return }
             (self.navigationController as? NavigationController)?.pushViewController(
                 self.context.sharedContext.makeStarsTransactionsScreen(context: self.context, starsContext: starsContext))
+        case (1, 3):
+            guard let tonContext = self.context.tonContext else { return }
+            (self.navigationController as? NavigationController)?.pushViewController(
+                self.context.sharedContext.makeStarsTransactionsScreen(context: self.context, starsContext: tonContext))
+        case (1, 4): self.withRecipient { [weak self] in self?.lookupGift() }
         case (2, _):
             let receipt = self.visibleReceipts[indexPath.row]
             let chat = self.context.sharedContext.makeChatController(context: self.context,
                 chatLocation: .peer(id: EnginePeer.Id(receipt.recipientId)), subject: nil, botStart: nil, mode: .standard(.default), params: nil)
             (self.navigationController as? NavigationController)?.pushViewController(chat)
         default:
-            self.confirm(title: "Сбросить мои функции?", message: "Виртуальный баланс станет нулевым, локальные подарки исчезнут.", destructive: true) { [weak self] in
+            self.confirm(title: "Сбросить фейк-подарки?", message: "Виртуальный баланс станет нулевым, локальные подарки исчезнут.", destructive: true) { [weak self] in
                 self?.perform { try self?.store.reset() }
             }
         }
@@ -402,13 +416,29 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.present(selector, in: .window(.root))
     }
 
-    private func confirmGift(_ gift: StarGift) {
+    private func confirmGift(_ gift: StarGift, currency: LocalGiftCurrency? = nil) {
         guard let recipient = self.recipient else { return }
-        guard let price = LocalGiftsStore.starsPrice(for: gift) else { self.showError(LocalGiftsError.unsupportedCurrency); return }
+        let starsPrice = LocalGiftsStore.starsPrice(for: gift)
+        let tonPrice = LocalGiftsStore.tonPriceNano(for: gift)
+        if currency == nil, let starsPrice, let tonPrice {
+            let alert = UIAlertController(title: LocalGiftsStore.title(for: gift), message: "Выбери валюту локальной покупки.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "★ \(starsPrice)", style: .default) { [weak self] _ in
+                Queue.mainQueue().after(0.25) { self?.confirmGift(gift, currency: .stars) }
+            })
+            alert.addAction(UIAlertAction(title: "\(LocalTonAmount.format(tonPrice)) GRAM", style: .default) { [weak self] _ in
+                Queue.mainQueue().after(0.25) { self?.confirmGift(gift, currency: .ton) }
+            })
+            alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+            self.present(alert, animated: true)
+            return
+        }
+        let selectedCurrency = currency ?? (starsPrice != nil ? .stars : .ton)
+        guard let price = selectedCurrency == .stars ? starsPrice : tonPrice else { self.showError(LocalGiftsError.unsupportedCurrency); return }
+        let priceText = selectedCurrency == .ton ? "\(LocalTonAmount.format(price)) GRAM" : "\(price) ★"
         let requestId = UUID()
-        self.confirm(title: LocalGiftsStore.title(for: gift), message: "\(self.name(of: recipient))\nСтоимость: \(price) ★", destructive: false) { [weak self] in
+        self.confirm(title: LocalGiftsStore.title(for: gift), message: "\(self.name(of: recipient))\nСтоимость: \(priceText)", destructive: false) { [weak self] in
             guard let self else { return }
-            self.perform { _ = try self.store.sendGift(gift, recipientId: recipient.id, recipientName: self.name(of: recipient), requestId: requestId) }
+            self.perform { _ = try self.store.sendGift(gift, recipientId: recipient.id, recipientName: self.name(of: recipient), requestId: requestId, currency: selectedCurrency) }
         }
     }
 
@@ -440,13 +470,17 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.present(alert, animated: true)
     }
 
-    private func requestAmount(title: String, initial: String, action: @escaping (Int64) -> Void) {
+    private func requestAmount(title: String, initial: String, currency: LocalGiftCurrency = .stars, action: @escaping (Int64) -> Void) {
         let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
-        alert.addTextField { $0.keyboardType = .numberPad; $0.text = initial; $0.placeholder = "Количество Stars" }
+        alert.addTextField { $0.keyboardType = currency == .ton ? .decimalPad : .numberPad; $0.text = initial; $0.placeholder = currency == .ton ? "Количество GRAM" : "Количество Stars" }
         alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
         alert.addAction(UIAlertAction(title: "Готово", style: .default) { [weak self, weak alert] _ in
             let text = (alert?.textFields?.first?.text ?? "").filter { !$0.isWhitespace }
-            guard let amount = Int64(text), amount >= 0 else { self?.showError(LocalGiftsError.invalidAmount); return }
+            let parsedAmount = currency == .ton ? LocalTonAmount.parse(text) : Int64(text)
+            guard let amount = parsedAmount, amount >= 0 else {
+                self?.showMessage(currency == .ton ? "Введи количество GRAM: до 9 знаков после запятой." : "Введи целое количество Stars от нуля.")
+                return
+            }
             action(amount)
         })
         self.present(alert, animated: true)
@@ -466,11 +500,11 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
     private func showError(_ error: Error) {
         let text: String
         switch error {
-        case LocalGiftsError.insufficientBalance: text = "Недостаточно виртуальных Stars. Измени баланс в разделе «Мои функции»."
+        case LocalGiftsError.insufficientBalance: text = "Недостаточно виртуального баланса. Измени баланс Stars или GRAM в разделе «Фейк-подарки»."
         case LocalGiftsError.invalidAmount: text = "Введи целое положительное количество Stars. Баланс можно установить в ноль."
         case LocalGiftsError.starsTransferTooLarge: text = "За одну отправку можно показать до 2 147 483 647 Stars. Виртуальный баланс может быть больше."
-        case LocalGiftsError.unsupportedCurrency: text = "У подарка нет цены в Stars. Выбери предложение маркетплейса с ценой ★."
-        case LocalGiftsError.unreadableStorage: text = "Не удалось прочитать локальные подарки. Можно сбросить их в разделе «Мои функции»."
+        case LocalGiftsError.unsupportedCurrency: text = "У подарка нет цены в Stars или GRAM. Выбери предложение на продажу в маркетплейсе."
+        case LocalGiftsError.unreadableStorage: text = "Не удалось прочитать локальные подарки. Можно сбросить их в разделе «Фейк-подарки»."
         default: text = "Не удалось сохранить локальные данные. Баланс не был изменён."
         }
         self.showMessage(text)
@@ -478,7 +512,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
 
     private func showMessage(_ text: String) {
         Queue.mainQueue().after(0.3) { [weak self] in
-            let alert = UIAlertController(title: "Мои функции", message: text, preferredStyle: .alert)
+            let alert = UIAlertController(title: "Фейк-подарки", message: text, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             self?.present(alert, animated: true)
         }

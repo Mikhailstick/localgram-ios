@@ -10,7 +10,6 @@ swift_library(
         "//submodules/AsyncDisplayKit",
         "//submodules/ComponentFlow",
         "//submodules/Display",
-        "//submodules/Postbox",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/TelegramCore",
         "//submodules/TelegramPresentationData",

@@ -3,62 +3,70 @@ name: Build LocalGram IPA
 on:
   workflow_dispatch:
     inputs:
-      runner:
-        description: "Mac runner with Xcode 26.2 installed"
+      build_number:
+        description: "App build number; keep unchanged for compilation retries"
+        type: number
         required: true
-        default: "macos-26"
-        type: string
-      bundle_id:
-        description: "App bundle identifier"
-        required: true
-        default: "dev.localgram.client"
-        type: string
+        default: 6
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ${{ inputs.runner }}
+    runs-on: xcode-27
     timeout-minutes: 360
     env:
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-      LOCALGIFTS_BUNDLE_ID: ${{ inputs.bundle_id }}
+      LOCALGIFTS_BUNDLE_ID: dev.localgram.client
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          submodules: recursive
-          fetch-depth: 1
-      - name: Select the pinned Xcode
+          python-version: "3.11"
+      - name: Restore the pinned client and its submodules
+        run: python3 bootstrap.py --destination client
+      - name: Select Xcode 27.1
         shell: bash
         run: |
           set -euo pipefail
-          xcode_required="$(python3 -c 'import json; print(json.load(open("versions.json"))["xcode"])')"
-          xcode_path="/Applications/Xcode_$xcode_required.app/Contents/Developer"
+          xcode_path="/Applications/Xcode_27.1.app/Contents/Developer"
           if [[ ! -d "$xcode_path" ]]; then
-            echo "This runner must have Xcode $xcode_required. Choose a matching Mac runner."
+            echo "This runner must have Xcode 27.1 installed."
             exit 1
           fi
           sudo xcode-select --switch "$xcode_path"
           xcodebuild -version
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Check sources
+      - name: Validate the implementation sources
         run: |
-          python3 -m pip install -r LocalGifts/requirements-validation.txt
-          python3 LocalGifts/validate_sources.py
-      - uses: actions/cache@v4
+          python3 -m pip install -r client/LocalGifts/requirements-validation.txt
+          python3 client/LocalGifts/validate_sources.py
+          python3 client/LocalGifts/test_passcode_environment.py
+          python3 client/Ghostgram/Strings/check.py --allow-unused
+      - name: Restore compiled Bazel actions
+        id: bazel-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/localgram-bazel-cache
-          key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('versions.json', 'MODULE.bazel.lock') }}
-      - name: Test the ledger and build a device IPA
-        run: python3 LocalGifts/build_ipa.py --build-number ${{ github.run_number }}
-      - name: Upload the compiled IPA
+          key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
+      - name: Run ledger tests and compile the device IPA
+        id: compile
+        env:
+          LOCALGIFTS_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: python3 client/LocalGifts/build_ipa.py --build-number "$LOCALGIFTS_BUILD_NUMBER"
+      - name: Save completed Bazel actions for the next build
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/localgram-bazel-cache
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+      - name: Export the compiled IPA
         uses: actions/upload-artifact@v4
         with:
           name: LocalGram-unsigned-IPA
-          path: LocalGifts/artifacts/LocalGram-unsigned.ipa
+          path: client/LocalGifts/artifacts/LocalGram-unsigned.ipa
           if-no-files-found: error
           retention-days: 7

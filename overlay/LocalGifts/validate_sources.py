@@ -14,10 +14,11 @@ SWIFT_FILES = [
     "LocalGifts/Tests/LocalGiftsLedgerTests.swift",
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsLedger.swift",
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsStore.swift",
-    "submodules/LocalGiftsUI/Sources/LocalGiftsController.swift",
+    "Ghostgram/LocalGiftsUI/Sources/LocalGiftsController.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatEntries.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatActions.swift",
 ]
+SWIFT_FILES += [str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "LocalGifts/Tests").glob("*.swift") if str(p.relative_to(ROOT)).replace("\\", "/") not in SWIFT_FILES]
 
 
 def errors(node):
@@ -38,7 +39,7 @@ def main():
             failures.append(f"{relative}: {issues[:12]}")
     changed = subprocess.check_output(["git", "diff", "--name-only"], cwd=ROOT, text=True).splitlines()
     for relative in changed:
-        if not relative.endswith(".swift"):
+        if not relative.endswith(".swift") or not (ROOT / relative).is_file():
             continue
         original = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=ROOT)
         previous = errors(parser.parse(original).root_node)
@@ -48,7 +49,7 @@ def main():
     for path in (ROOT / "LocalGifts").glob("*.py"):
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     ast.parse((ROOT / "build-system/Make/Make.py").read_text(encoding="utf-8"))
-    for relative in ["Telegram/BUILD", "submodules/LocalGiftsUI/BUILD", "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD"]:
+    for relative in ["Telegram/BUILD", "Ghostgram/LocalGiftsUI/BUILD", "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD"]:
         ast.parse((ROOT / relative).read_text(encoding="utf-8"), filename=relative)
     workflow = yaml.load((ROOT / ".github/workflows/local-gifts.yml").read_text(), Loader=yaml.BaseLoader)
     if set(workflow["on"]) != {"workflow_dispatch"}:

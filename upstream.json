@@ -1,7 +1,6 @@
 {
-  "repository": "https://github.com/TelegramMessenger/Telegram-iOS.git",
-  "tag": "release-12.9.2",
-  "commit": "6ad963e5b62d354da79040f388ae2b9132fb17b8",
-  "xcode": "26.2",
-  "note": "Official Telegram iOS baseline. The release commit matches the previously selected Swiftgram tag; canonical relative submodule URLs resolve to public TelegramMessenger repositories."
+  "repository": "https://github.com/ichmagmaus111/ghostgram.git",
+  "commit": "2a6b08272b7da893f88986846022bafd0727df89",
+  "xcode": "27.1",
+  "note": "Pinned GhostGram base; selected features with LocalGram local gifts and GRAM. GPL-2.0 notices are retained."
 }

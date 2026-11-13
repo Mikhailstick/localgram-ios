@@ -1,0 +1,2 @@
+# Diff context and removed lines in a patch intentionally preserve upstream whitespace.
+local-gifts.patch text eol=lf -whitespace

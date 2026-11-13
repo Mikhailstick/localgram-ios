@@ -1,7 +1,6 @@
 import AccountContext
 import ChatHistoryEntry
 import Foundation
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 
@@ -11,7 +10,7 @@ func localGiftsChatEntries(
     context: AccountContext,
     location: ChatLocation,
     subject: ChatControllerSubject?,
-    view: MessageHistoryView,
+    view: EngineRawMessageHistoryView,
     accountPeer: EnginePeer?,
     presentationData: ChatPresentationData,
     reverse: Bool,
@@ -30,10 +29,10 @@ func localGiftsChatEntries(
     }
     guard !receipts.isEmpty else { return entries }
     var result = reverse ? Array(entries.reversed()) : entries
-    var peers = SimpleDictionary<PeerId, Peer>()
-    if let accountPeer { peers[accountPeer.id] = accountPeer._asPeer() }
+    var peers: [EnginePeer.Id: EnginePeer] = [:]
+    if let accountPeer { peers[accountPeer.id] = accountPeer }
     for additional in view.additionalData {
-        if case let .peer(id, peer) = additional, let peer { peers[id] = peer }
+        if case let .peer(id, peer) = additional, let peer { peers[id] = EnginePeer(peer) }
     }
     for receipt in receipts {
         let action: TelegramMediaActionType
@@ -54,23 +53,24 @@ func localGiftsChatEntries(
                 action = .starGiftUnique(gift: gift, isUpgrade: false, isTransferred: true,
                     savedToProfile: false, canExportDate: nil, transferStars: nil, isRefunded: false,
                     isPrepaidUpgrade: false, peerId: peerId, senderId: context.account.peerId,
-                    savedId: nil, resaleAmount: nil, canTransferDate: nil, canResaleDate: nil,
+                    savedId: nil, resaleAmount: CurrencyAmount(amount: StarsAmount(value: receipt.cost, nanos: 0), currency: receipt.currency == .ton ? .ton : .stars), canTransferDate: nil, canResaleDate: nil,
                     dropOriginalDetailsStars: nil, assigned: false, fromOffer: false,
-                    canCraftAt: nil, isCrafted: false)
+                    canCraftAt: nil, isCrafted: false, text: receipt.text,
+                    entities: LocalGiftsStore.decodedEntities(receipt), nameHidden: receipt.nameHidden ?? false)
             }
         }
-        let message = Message(
+        let message = EngineMessage(
             stableId: 3_000_000_000 + UInt32(receipt.sequence),
             stableVersion: 0,
-            id: MessageId(peerId: peerId, namespace: LocalGiftsStore.messageNamespace, id: receipt.sequence),
+            id: EngineMessage.Id(peerId: peerId, namespace: LocalGiftsStore.messageNamespace, id: receipt.sequence),
             globallyUniqueId: nil, groupingKey: nil, groupInfo: nil, threadId: nil,
             timestamp: receipt.timestamp, flags: [], tags: [], globalTags: [], localTags: [],
-            customTags: [], forwardInfo: nil, author: accountPeer?._asPeer(), text: "",
-            attributes: [], media: [TelegramMediaAction(action: action)], peers: peers,
-            associatedMessages: SimpleDictionary<MessageId, Message>(), associatedMessageIds: [],
+            customTags: [], forwardInfo: nil, author: accountPeer, text: "",
+            attributes: [], media: [.action(TelegramMediaAction(action: action))], peers: peers,
+            associatedMessages: [:], associatedMessageIds: [],
             associatedMedia: [:], associatedThreadInfo: nil, associatedStories: [:]
         )
-        result.append(.MessageEntry(message, presentationData, true, nil, .none, ChatMessageEntryAttributes()))
+        result.append(.MessageEntry(message._asMessage(), presentationData, true, nil, .none, ChatMessageEntryAttributes()))
     }
     result.sort()
     return reverse ? Array(result.reversed()) : result

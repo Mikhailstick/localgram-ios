@@ -24,6 +24,12 @@ public final class LocalGiftsStore {
         return id.namespace == self.messageNamespace
     }
 
+    public static let transactionIdPrefix = "localgifts:"
+
+    public static func isLocalTransaction(_ id: String) -> Bool {
+        return id.hasPrefix(self.transactionIdPrefix)
+    }
+
     private static let registryLock = NSLock()
     private static var registry: [Int64: LocalGiftsStore] = [:]
 
@@ -72,22 +78,87 @@ public final class LocalGiftsStore {
 
     /// Projects a local balance for a screen without changing the server StarsContext.
     public func presentationState(_ state: StarsContext.State?) -> StarsContext.State {
-        return Self.presentationState(state, balance: self.snapshot().balance)
+        return Self.presentationState(state, ledger: self.snapshot(), currency: .stars)
     }
 
     /// Updates a screen when either server metadata or the account-local ledger changes.
     public func presentationState(_ state: Signal<StarsContext.State?, NoError>) -> Signal<StarsContext.State?, NoError> {
         return combineLatest(state, self.state)
         |> map { state, ledger -> StarsContext.State? in
-            return Self.presentationState(state, balance: ledger.balance)
+            return Self.presentationState(state, ledger: ledger, currency: .stars)
         }
         |> distinctUntilChanged
     }
 
-    private static func presentationState(_ state: StarsContext.State?, balance: Int64) -> StarsContext.State {
+    public func tonPresentationState(_ state: StarsContext.State?) -> StarsContext.State {
+        return Self.presentationState(state, ledger: self.snapshot(), currency: .ton)
+    }
+
+    public func tonPresentationState(_ state: Signal<StarsContext.State?, NoError>) -> Signal<StarsContext.State?, NoError> {
+        return combineLatest(state, self.state)
+        |> map { state, ledger -> StarsContext.State? in
+            return Self.presentationState(state, ledger: ledger, currency: .ton)
+        }
+        |> distinctUntilChanged
+    }
+
+    private static func presentationState(_ state: StarsContext.State?, ledger: LocalGiftsLedger, currency: LocalGiftCurrency) -> StarsContext.State {
         var result = state ?? StarsContext.State(flags: [], balance: .zero, subscriptions: [], canLoadMoreSubscriptions: false, transactions: [], canLoadMoreTransactions: false, isLoading: false)
+        // The native TON StarsContext carries nanoTON in value, with nanos == 0.
+        let balance = currency == .ton ? ledger.tonBalanceNano : ledger.balance
         result.balance = StarsAmount(value: balance, nanos: 0)
+        result.flags.remove(.isPendingBalance)
+        result.transactions = Self.transactions(ledger: ledger, currency: currency)
+        result.canLoadMoreTransactions = false
+        result.isLoading = false
         return result
+    }
+
+    /// The local wallet has its own spending history. No server transaction signal is subscribed
+    /// and no remote context is modified or paginated by this projection.
+    public func presentationTransactionsState(_ state: Signal<StarsTransactionsContext.State, NoError>, currency: LocalGiftCurrency, mode: StarsTransactionsContext.Mode) -> Signal<StarsTransactionsContext.State, NoError> {
+        return self.state
+        |> map { ledger -> StarsTransactionsContext.State in
+            let transactions: [StarsContext.State.Transaction]
+            switch mode {
+            case .all, .outgoing:
+                transactions = Self.transactions(ledger: ledger, currency: currency)
+            case .incoming:
+                transactions = []
+            }
+            return StarsTransactionsContext.State(transactions: transactions, canLoadMore: false, isLoading: false)
+        }
+        |> distinctUntilChanged
+    }
+
+    private static func transactions(ledger: LocalGiftsLedger, currency: LocalGiftCurrency) -> [StarsContext.State.Transaction] {
+        return ledger.expenses(currency: currency).map { receipt in
+            // A display peer retains the recorded recipient name without fetching or persisting it.
+            let peer = EnginePeer.user(TelegramUser(
+                id: EnginePeer.Id(receipt.recipientId), accessHash: nil,
+                firstName: receipt.recipientName, lastName: nil, username: nil, phone: nil,
+                photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil,
+                usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil,
+                profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil,
+                verificationIconFileId: nil
+            ))
+            var flags: StarsContext.State.Transaction.Flags = [.isLocal]
+            if receipt.kind == .stars {
+                flags.insert(.isGift)
+            } else if receipt.kind == .collectible {
+                flags.insert(.isStarGiftResale)
+            }
+            return StarsContext.State.Transaction(
+                flags: flags, id: Self.transactionIdPrefix + receipt.id.uuidString,
+                count: CurrencyAmount(amount: StarsAmount(value: -receipt.cost, nanos: 0), currency: currency == .ton ? .ton : .stars),
+                date: receipt.timestamp, peer: .peer(peer), title: receipt.title,
+                description: receipt.recipientName, photo: nil, transactionDate: nil,
+                transactionUrl: nil, paidMessageId: nil, giveawayMessageId: nil, media: [],
+                subscriptionPeriod: nil, starGift: Self.decodedGift(receipt), floodskipNumber: nil,
+                starrefCommissionPermille: nil, starrefPeerId: nil, starrefAmount: nil,
+                paidMessageCount: nil, premiumGiftMonths: nil, adsProceedsFromDate: nil, adsProceedsToDate: nil
+            )
+        }
     }
 
     /// UI mutations run on main; readers and the state signal can be used from any queue.
@@ -116,6 +187,18 @@ public final class LocalGiftsStore {
         try self.update { try $0.setBalance(amount) }
     }
 
+    public func setTonBalanceNano(_ amount: Int64) throws {
+        try self.update { try $0.setTonBalanceNano(amount) }
+    }
+
+    public func grantStars(_ amount: Int64) throws {
+        try self.update { try $0.grantStars(amount) }
+    }
+
+    public func grantTonNano(_ amount: Int64) throws {
+        try self.update { try $0.grantTonNano(amount) }
+    }
+
     public static func starsPrice(for gift: StarGift) -> Int64? {
         switch gift {
         case let .generic(gift):
@@ -139,9 +222,19 @@ public final class LocalGiftsStore {
         }
     }
 
+    public static func tonPriceNano(for gift: StarGift) -> Int64? {
+        guard case let .unique(gift) = gift,
+              let price = gift.resellAmounts?.first(where: { $0.currency == .ton }),
+              price.amount.nanos == 0, price.amount.value > 0 else {
+            return nil
+        }
+        return price.amount.value
+    }
+
     @discardableResult
-    public func sendGift(_ gift: StarGift, recipientId: EnginePeer.Id, recipientName: String, requestId: UUID, text: String? = nil, entities: [MessageTextEntity]? = nil, nameHidden: Bool = false, priceOverride: Int64? = nil) throws -> LocalGiftReceipt {
-        guard let price = priceOverride ?? Self.starsPrice(for: gift), price > 0 else {
+    public func sendGift(_ gift: StarGift, recipientId: EnginePeer.Id, recipientName: String, requestId: UUID, text: String? = nil, entities: [MessageTextEntity]? = nil, nameHidden: Bool = false, priceOverride: Int64? = nil, currency: LocalGiftCurrency = .stars) throws -> LocalGiftReceipt {
+        let listedPrice = currency == .ton ? Self.tonPriceNano(for: gift) : Self.starsPrice(for: gift)
+        guard let price = priceOverride ?? listedPrice, price > 0 else {
             throw LocalGiftsError.unsupportedCurrency
         }
         let data = try JSONEncoder().encode(gift)
@@ -157,7 +250,7 @@ public final class LocalGiftsStore {
             receipt = try $0.purchase(requestId: requestId, recipientId: recipientId.toInt64(), recipientName: recipientName,
                 timestamp: Int32(clamping: Int64(Date().timeIntervalSince1970)), kind: kind,
                 title: Self.title(for: gift), cost: price, giftData: data,
-                text: text, entitiesData: entitiesData, nameHidden: nameHidden)
+                text: text, entitiesData: entitiesData, nameHidden: nameHidden, currency: currency)
         }
         return receipt!
     }
@@ -183,6 +276,14 @@ public final class LocalGiftsStore {
 
     public func receipt(sequence: Int32, recipientId: EnginePeer.Id) -> LocalGiftReceipt? {
         return self.snapshot().receipts.first(where: { $0.sequence == sequence && $0.recipientId == recipientId.toInt64() })
+    }
+
+    public func receipt(transactionId: String) -> LocalGiftReceipt? {
+        guard Self.isLocalTransaction(transactionId),
+              let id = UUID(uuidString: String(transactionId.dropFirst(Self.transactionIdPrefix.count))) else {
+            return nil
+        }
+        return self.snapshot().receipts.first(where: { $0.id == id })
     }
 
     public static func decodedGift(_ receipt: LocalGiftReceipt) -> StarGift? {

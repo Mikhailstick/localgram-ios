@@ -7,14 +7,14 @@ on:
         description: "App build number; keep unchanged for compilation retries"
         type: number
         required: true
-        default: 4
+        default: 6
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 360
     env:
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
@@ -27,13 +27,13 @@ jobs:
           python-version: "3.11"
       - name: Restore the pinned client and its submodules
         run: python3 bootstrap.py --destination client
-      - name: Select Xcode 26.2
+      - name: Select Xcode 27.1
         shell: bash
         run: |
           set -euo pipefail
-          xcode_path="/Applications/Xcode_26.2.app/Contents/Developer"
+          xcode_path="/Applications/Xcode_27.1.app/Contents/Developer"
           if [[ ! -d "$xcode_path" ]]; then
-            echo "This runner must have Xcode 26.2 installed."
+            echo "This runner must have Xcode 27.1 installed."
             exit 1
           fi
           sudo xcode-select --switch "$xcode_path"
@@ -42,6 +42,8 @@ jobs:
         run: |
           python3 -m pip install -r client/LocalGifts/requirements-validation.txt
           python3 client/LocalGifts/validate_sources.py
+          python3 client/LocalGifts/test_passcode_environment.py
+          python3 client/Ghostgram/Strings/check.py --allow-unused
       - name: Restore compiled Bazel actions
         id: bazel-cache
         uses: actions/cache/restore@v4

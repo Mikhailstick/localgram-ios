@@ -17,10 +17,14 @@ def main():
     if destination.exists():
         raise SystemExit("Destination already exists. Choose a new directory; existing files are never replaced.")
     manifest = json.loads((ROOT / "upstream.json").read_text())
-    subprocess.run(["git", "clone", "--depth", "1", "--branch", manifest["tag"], manifest["repository"], str(destination)], check=True)
+    subprocess.run(["git", "init", str(destination)], check=True)
+    subprocess.run(["git", "config", "core.longpaths", "true"], cwd=destination, check=True)
+    subprocess.run(["git", "remote", "add", "origin", manifest["repository"]], cwd=destination, check=True)
+    subprocess.run(["git", "fetch", "--depth", "1", "origin", manifest["commit"]], cwd=destination, check=True)
+    subprocess.run(["git", "checkout", "--detach", "FETCH_HEAD"], cwd=destination, check=True)
     actual = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=destination, text=True).strip()
     if actual != manifest["commit"]:
-        raise SystemExit("The upstream tag no longer points to the pinned commit. Refusing to apply changes to different source.")
+        raise SystemExit("Fetched source does not match the pinned commit.")
     patch = ROOT / "local-gifts.patch"
     subprocess.run(["git", "apply", "--check", str(patch)], cwd=destination, check=True)
     for source in (ROOT / "overlay").rglob("*"):

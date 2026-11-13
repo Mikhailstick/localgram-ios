@@ -2,7 +2,7 @@
 import subprocess
 from pathlib import Path
 
-PINNED_RULES_COMMIT = "1791d916de4083388f22e20248d8b010d23f0d6b"
+PINNED_RULES_COMMIT = "485016eb5b0948cc17307064e7977a6d68e94046"
 
 
 def prepare_unsigned_rules(root: Path):
