@@ -99,10 +99,26 @@ UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromCla
     output.mkdir(parents=True, exist_ok=True)
     runtimes = json.loads(run("xcrun", "simctl", "list", "runtimes", "--json"))["runtimes"]
     available = [item for item in runtimes if item.get("isAvailable") and ".iOS-" in item["identifier"]]
-    runtime = max(available, key=lambda item: tuple(map(int, item["version"].split("."))))["identifier"]
     types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
-    preferred = next((item for item in types if item["name"] == "iPhone 17 Pro"), None)
-    device_type = (preferred or next(item for item in reversed(types) if item["name"].startswith("iPhone") and "Pro" in item["name"]))["identifier"]
+    runtime = None
+    device_type = None
+    for candidate in sorted(available, key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True):
+        supported = candidate.get("supportedDeviceTypes", [])
+        supported_ids = {item["identifier"] if isinstance(item, dict) else item for item in supported}
+        # Some beta runtimes are restricted to one new iPhone model. Do not pair those
+        # with a device selected independently from CoreSimulator's type inventory.
+        if not supported_ids and not re.search(r"\.iOS-\d+-\d+(?:-\d+)?$", candidate["identifier"]):
+            continue
+        compatible = [item for item in types if item["name"].startswith("iPhone") and (not supported_ids or item["identifier"] in supported_ids)]
+        if not compatible:
+            continue
+        preferred = next((item for item in compatible if item["name"] == "iPhone 17 Pro"), None)
+        runtime = candidate["identifier"]
+        device_type = (preferred or compatible[-1])["identifier"]
+        break
+    if runtime is None:
+        raise RuntimeError("No compatible installed iPhone simulator runtime/type pair.")
+    print("Rendering on " + device_type + " with " + runtime, flush=True)
     device = run("xcrun", "simctl", "create", "LocalGram branding preview", device_type, runtime)
     try:
         with tempfile.TemporaryDirectory(prefix="localgram-branding-") as scratch:
