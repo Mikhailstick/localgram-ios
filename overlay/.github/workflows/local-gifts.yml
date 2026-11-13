@@ -7,7 +7,7 @@ on:
         description: "App build number; keep unchanged for compilation retries"
         type: number
         required: true
-        default: 7
+        default: 8
 
 permissions:
   contents: read
