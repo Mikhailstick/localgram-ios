@@ -111,7 +111,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         self.ledger = self.store.snapshot()
         self.mode = mode
         self.recipient = recipient
-        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: self.presentationData, style: .glass))
+        super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: self.presentationData))
         self.overrideUserInterfaceStyle = self.presentationData.theme.overallDarkAppearance ? .dark : .light
         self.table.backgroundColor = self.presentationData.theme.list.blocksBackgroundColor
         switch mode {

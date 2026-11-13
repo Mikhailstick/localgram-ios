@@ -595,6 +595,23 @@ index d1ff0f65..ae9ec03b 100644
          return configuration.appGroupIdentifier
      }
  
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift b/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift
+index 8aeafd02..9e551727 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Payments/StarGifts.swift
+@@ -4643,6 +4643,12 @@ public final class ResaleGiftsContext {
+             impl.updateSorting(sorting)
+         }
+     }
++
++    public func reload() {
++        self.impl.with { impl in
++            impl.reload()
++        }
++    }
+     
+     public func updateFilterAttributes(_ attributes: [ResaleGiftsContext.Attribute]) {
+         self.impl.with { impl in
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift
 index 6d1dd1be..384dcdab 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageGiftBubbleContentNode/Sources/ChatMessageGiftBubbleContentNode.swift
