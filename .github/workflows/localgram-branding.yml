@@ -19,6 +19,12 @@ jobs:
         run: python3 bootstrap.py --destination client --skip-submodules
       - name: Select Xcode
         run: sudo xcode-select --switch /Applications/Xcode_27.1.app/Contents/Developer
+      - name: Prepare recorded frame analysis
+        run: |
+          python3 -m pip install Pillow
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            brew install ffmpeg
+          fi
       - name: Render production branding
         timeout-minutes: 6
         run: python3 client/LocalGifts/render_branding_preview.py

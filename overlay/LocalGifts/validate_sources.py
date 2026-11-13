@@ -15,6 +15,7 @@ SWIFT_FILES = [
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsLedger.swift",
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsStore.swift",
     "Ghostgram/LocalGiftsUI/Sources/LocalGiftsController.swift",
+    "Ghostgram/Features/Interface/Sources/IslandBadge/GGBadgeAppearance.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatEntries.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatActions.swift",
 ]
