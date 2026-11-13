@@ -1649,7 +1649,7 @@ index 91c2a2b6..85add7a4 100644
              updateProgress(true)
              
 diff --git a/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
-index 57947333..b0740adc 100644
+index 57947333..c8e48e48 100644
 --- a/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
 +++ b/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
 @@ -546,7 +546,7 @@ private final class GiftViewSheetContent: CombinedComponent {
@@ -1667,7 +1667,7 @@ index 57947333..b0740adc 100644
                          }
 +                        if case let .message(message) = strongSelf.subject {
 +                            for (peerId, peer) in message.peers where peersMap[peerId] == nil {
-+                                peersMap[peerId] = peer
++                                peersMap[peerId] = EnginePeer(peer)
 +                            }
 +                        }
                          strongSelf.peerMap = peersMap
