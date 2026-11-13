@@ -17,7 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(*args):
-    return subprocess.check_output(args, text=True).strip()
+    try:
+        return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, timeout=150).strip()
+    except subprocess.CalledProcessError as error:
+        print(error.output, flush=True)
+        raise
 
 
 def function(source, name):
@@ -47,12 +51,23 @@ extension UIColor {
     for name in ("ggRenderLocalGramIslandBadge", "ggRenderSettingsTile", "ggRenderBrandMark"):
         pieces.append(function(source, name))
     pieces.append('''
-final class PreviewDelegate: UIResponder, UIApplicationDelegate {
+@objc(PreviewAppDelegate)
+final class PreviewAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: "Default", sessionRole: session.role)
+        configuration.delegateClass = PreviewSceneDelegate.self
+        return configuration
+    }
+}
+@objc(PreviewSceneDelegate)
+final class PreviewSceneDelegate: NSObject, UIWindowSceneDelegate {
     var window: UIWindow?
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
         let badge = ggRenderLocalGramIslandBadge()!
         let tile = ggRenderSettingsTile()!
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try! badge.pngData()!.write(to: directory.appendingPathComponent("badge.png"))
         let preview = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image { render in
             UIColor.white.setFill()
@@ -71,21 +86,23 @@ final class PreviewDelegate: UIResponder, UIApplicationDelegate {
         imageView.contentMode = .scaleAspectFit
         imageView.frame = CGRect(x: 0, y: 150, width: 320, height: 180)
         controller.view.addSubview(imageView)
-        let window = UIWindow(frame: UIScreen.main.bounds)
+        let window = UIWindow(windowScene: windowScene)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         self.window = window
-        return true
+        NSLog("LocalGram branding preview rendered in %@", directory.path)
     }
 }
-UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(PreviewDelegate.self))
+UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(PreviewAppDelegate.self))
 ''')
     output = ROOT / "LocalGifts/artifacts/branding"
     output.mkdir(parents=True, exist_ok=True)
     runtimes = json.loads(run("xcrun", "simctl", "list", "runtimes", "--json"))["runtimes"]
-    runtime = next(item["identifier"] for item in reversed(runtimes) if item.get("isAvailable") and ".iOS-" in item["identifier"])
+    available = [item for item in runtimes if item.get("isAvailable") and ".iOS-" in item["identifier"]]
+    runtime = max(available, key=lambda item: tuple(map(int, item["version"].split("."))))["identifier"]
     types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
-    device_type = next(item["identifier"] for item in reversed(types) if item["name"].startswith("iPhone") and "Pro" in item["name"])
+    preferred = next((item for item in types if item["name"] == "iPhone 17 Pro"), None)
+    device_type = (preferred or next(item for item in reversed(types) if item["name"].startswith("iPhone") and "Pro" in item["name"]))["identifier"]
     device = run("xcrun", "simctl", "create", "LocalGram branding preview", device_type, runtime)
     try:
         with tempfile.TemporaryDirectory(prefix="localgram-branding-") as scratch:
@@ -93,35 +110,40 @@ UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromCla
             app.mkdir()
             swift = Path(scratch) / "main.swift"
             swift.write_text("\n".join(pieces))
-            info = {"CFBundleIdentifier": "dev.localgram.brandingpreview", "CFBundleExecutable": "Preview", "CFBundleName": "Preview", "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0", "CFBundlePackageType": "APPL", "MinimumOSVersion": "15.0", "UIDeviceFamily": [1], "UILaunchScreen": {}}
+            info = {"CFBundleIdentifier": "dev.localgram.brandingpreview", "CFBundleExecutable": "Preview", "CFBundleName": "Preview", "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0", "CFBundlePackageType": "APPL", "MinimumOSVersion": "15.0", "UIDeviceFamily": [1], "LSRequiresIPhoneOS": True, "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "UILaunchScreen": {}, "UIApplicationSceneManifest": {"UIApplicationSupportsMultipleScenes": False, "UISceneConfigurations": {"UIWindowSceneSessionRoleApplication": [{"UISceneConfigurationName": "Default", "UISceneDelegateClassName": "PreviewSceneDelegate"}]}}}
             (app / "Info.plist").write_bytes(plistlib.dumps(info))
             sdk = run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path")
-            subprocess.run(["xcrun", "swiftc", "-sdk", sdk, "-target", "arm64-apple-ios15.0-simulator", str(swift), "-o", str(app / "Preview")], check=True)
-            subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True)
+            subprocess.run(["xcrun", "swiftc", "-sdk", sdk, "-target", "arm64-apple-ios15.0-simulator", "-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift", str(swift), "-o", str(app / "Preview")], check=True, timeout=120)
+            subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True, timeout=30)
             run("xcrun", "simctl", "boot", device)
             run("xcrun", "simctl", "bootstatus", device, "-b")
             run("xcrun", "simctl", "install", device, str(app))
-            with (output / "recording.log").open("w") as recording_log:
+            container = Path(run("xcrun", "simctl", "get_app_container", device, info["CFBundleIdentifier"], "data"))
+            with (output / "recording.log").open("w") as recording_log, (output / "console.log").open("w") as console_log:
                 recording = subprocess.Popen(["xcrun", "simctl", "io", device, "recordVideo", "--codec=h264", "--force", str(output / "branding.mp4")], stdout=recording_log, stderr=recording_log)
                 try:
                     time.sleep(1)
-                    run("xcrun", "simctl", "launch", device, info["CFBundleIdentifier"])
-                    time.sleep(2)
+                    launcher = subprocess.Popen(["xcrun", "simctl", "launch", "--console", device, info["CFBundleIdentifier"]], stdout=console_log, stderr=console_log)
+                    for _ in range(30):
+                        if (container / "Documents/branding-preview.png").exists():
+                            time.sleep(1)
+                            run("xcrun", "simctl", "io", device, "screenshot", str(output / "simulator.png"))
+                            break
+                        time.sleep(1)
+                    subprocess.run(["xcrun", "simctl", "terminate", device, info["CFBundleIdentifier"]], check=False, timeout=20)
+                    launcher.wait(timeout=20)
                 finally:
                     recording.send_signal(signal.SIGINT)
                     recording.wait(timeout=30)
-            container = Path(run("xcrun", "simctl", "get_app_container", device, info["CFBundleIdentifier"], "data"))
-            for _ in range(30):
-                if (container / "Documents/branding-preview.png").exists():
-                    break
-                time.sleep(1)
             for name in ("badge.png", "branding-preview.png"):
                 shutil.copy2(container / "Documents" / name, output / name)
-            run("xcrun", "simctl", "io", device, "screenshot", str(output / "simulator.png"))
         print("Rendered the production LocalGram badge and settings icon using UIKit.")
     finally:
-        subprocess.run(["xcrun", "simctl", "shutdown", device], check=False)
-        subprocess.run(["xcrun", "simctl", "delete", device], check=False)
+        for operation in ("shutdown", "delete"):
+            try:
+                subprocess.run(["xcrun", "simctl", operation, device], check=False, timeout=20)
+            except subprocess.TimeoutExpired:
+                print("Simulator cleanup timed out: " + operation)
 
 
 if __name__ == "__main__":
