@@ -9,7 +9,7 @@ permissions:
 jobs:
   branding:
     runs-on: xcode-27
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,7 +26,7 @@ jobs:
             brew install ffmpeg
           fi
       - name: Render production branding
-        timeout-minutes: 12
+        timeout-minutes: 16
         run: python3 client/LocalGifts/render_branding_preview.py
       - name: Export preview and diagnostics
         if: always()

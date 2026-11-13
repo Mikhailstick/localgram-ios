@@ -42,7 +42,8 @@ EXPECTATIONS = """Expected appearance frames before recording:
   This checks UIKit bitmap/host appearance, not full-app cutout placement,
   interactive settings, persistence or search/gift navigation.
 - If the matching SDK runtime supports only iPhone Duo, the disposable Duo
-  verifies this one generic UIKit host in its initial posture. It does not
+  records its primary display (1) and verifies this one generic UIKit host
+  in its initial posture. It does not
   verify the production app's Duo placement, folding or rotation behavior.
 """
 
@@ -432,9 +433,11 @@ def frame_sheet(output, metadata, timeout=150):
 
 
 def main():
-    # Active work gets 10m40s, leaving 80s for bounded diagnostics/cleanup within
-    # the workflow's 12-minute render step. Per-stage limits share this budget.
-    render_deadline = time.monotonic() + 640
+    # The matching Duo runtime needed 150s boot + 114s install + 99s container
+    # on the observed runner. Active work gets 14m40s so launch and frame
+    # extraction still have time; 80s remain for diagnostics/cleanup within
+    # the workflow's 16-minute render step. Per-stage limits share this budget.
+    render_deadline = time.monotonic() + 880
     if platform.system() != "Darwin":
         raise SystemExit("UIKit preview needs macOS with the iOS Simulator SDK, ffmpeg/ffprobe and Pillow.")
     missing = [name for name in ("xcrun", "codesign", "ffmpeg", "ffprobe") if shutil.which(name) is None]
@@ -461,12 +464,18 @@ def main():
     runtime, selected_type = select_simulator(runtimes, types, sdk_version)
     device_type = selected_type["identifier"]
     device_name = selected_type["name"]
+    # Duo has two displays, so simctl cannot choose a recording/screenshot
+    # target. Its documented primary display is 1; ordinary iPhones retain
+    # simctl's default. Both captures must use the same display.
+    display_options = ["--display=1"] if "Duo" in device_name else []
     progress(output, "Creating disposable simulator", device_type=device_type, device_name=device_name, runtime=runtime)
     device = run_logged(output, "create", "xcrun", "simctl", "create", "LocalGram branding preview", device_type, runtime, timeout=operation_timeout(render_deadline, 60, 80))
     (output / "simulator-selection.json").write_text(json.dumps({"device": device, "device_type": device_type,
         "device_name": device_name, "runtime": runtime, "sdk_version": sdk_version,
         "preference": "matching SDK runtime; standard iPhone preferred when supported, Duo allowed",
+        "capture_display": 1 if display_options else "default",
         "scope": "one UIKit preview host in initial posture; production Duo layout untested"}, indent=2), encoding="utf-8")
+    container = None
     try:
         with tempfile.TemporaryDirectory(prefix="localgram-branding-") as scratch:
             app = Path(scratch) / "Preview.app"
@@ -486,7 +495,7 @@ def main():
                 info["CFBundleIdentifier"], "data", timeout=operation_timeout(render_deadline, 240, 130)))
             with (output / "recording.log").open("w") as recording_log, (output / "console.log").open("w") as console_log:
                 progress(output, "Starting passive simulator recording")
-                recording = subprocess.Popen(["xcrun", "simctl", "io", device, "recordVideo", "--codec=h264", "--force", str(output / "branding.mp4")], stdout=recording_log, stderr=recording_log)
+                recording = subprocess.Popen(["xcrun", "simctl", "io", device, "recordVideo", *display_options, "--codec=h264", "--force", str(output / "branding.mp4")], stdout=recording_log, stderr=recording_log)
                 launcher = None
                 try:
                     recording_ready(recording, output / "recording.log", timeout=operation_timeout(render_deadline, 120, 100))
@@ -510,7 +519,7 @@ def main():
                     progress(output, "All appearance variants rendered")
                     time.sleep(0.5)
                     run_logged(output, "screenshot", "xcrun", "simctl", "io", device, "screenshot",
-                        str(output / "simulator.png"), timeout=operation_timeout(render_deadline, 150, 60))
+                        *display_options, str(output / "simulator.png"), timeout=operation_timeout(render_deadline, 150, 60))
                 finally:
                     # End recording while the final variant is still visible.
                     if recording.poll() is None:
@@ -540,12 +549,22 @@ def main():
         progress(output, "Extracting recorded frames with ffprobe presentation times")
         frame_sheet(output, metadata, timeout=operation_timeout(render_deadline, 150))
         metadata.update({"runtime": runtime, "device_type": device_type, "device_name": device_name,
+            "capture_display": 1 if display_options else "default",
             "production_duo_layout_test": "not performed", "production_source_sha256": hashlib.sha256(source.encode()).hexdigest(),
             "recording": "branding.mp4", "frame_contact_sheets": "frames/sheet-*.png", "frame_timestamps": "frames.tsv",
             "timestamp_source": "ffprobe frame pts_time; no fixed-rate resampling", "scope": "UIKit bitmap and host appearance; full app placement untested"})
         (output / "preview-verification.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         progress(output, "Rendered production appearance and labelled native frames")
     except BaseException as error:
+        # Preserve native PNGs/event metadata even if a later capture or frame
+        # analysis step fails, before our disposable simulator is removed.
+        if container is not None and (container / "Documents").is_dir():
+            try:
+                for item in (container / "Documents").iterdir():
+                    if item.suffix in (".png", ".json"):
+                        shutil.copy2(item, output / item.name)
+            except OSError as collection_error:
+                progress(output, "Native output collection failed", error=str(collection_error))
         (output / "failure.json").write_text(json.dumps({"error_type": type(error).__name__, "error": str(error),
             "device": device, "runtime": runtime}, indent=2), encoding="utf-8")
         progress(output, "Preview failed", error_type=type(error).__name__, error=str(error))
