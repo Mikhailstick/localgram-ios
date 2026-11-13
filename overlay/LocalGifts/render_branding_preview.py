@@ -35,7 +35,7 @@ EXPECTATIONS = """Expected appearance frames before recording:
 - Host alpha 20%, 60% and 100% affects background, glyph and text together.
 - Nil keeps the original cyan/blue gradient. A custom UInt32 color is passed
   directly to the production renderer, without a preview-specific tint.
-- Variants change once per second as deliberate steps; the numbered label
+- Variants advance serially after one second in each state; the numbered label
   identifies each state. No spring or animated interpolation is expected.
   There must be no clipped or duplicated content between states.
 - Frames use decoded index and ffprobe presentation timestamps, not index/fps.
@@ -99,6 +99,8 @@ def simulator_diagnostics(output, device):
     """Read durable state with bounded commands before disposing our simulator."""
     commands = [
         ("diagnostic-devices.json", ["xcrun", "simctl", "list", "devices", "--json"]),
+        ("diagnostic-load-average.log", ["/usr/bin/uptime"]),
+        ("diagnostic-virtual-memory.log", ["/usr/bin/vm_stat"]),
         ("diagnostic-runtime-processes.log", ["/usr/bin/pgrep", "-lf", "CoreSimulator|simctl|launchd_sim|SpringBoard|installd"]),
         ("diagnostic-simulator.log", ["/usr/bin/log", "show", "--last", "5m", "--style", "compact", "--predicate", 'subsystem BEGINSWITH "com.apple.CoreSimulator"']),
     ]
@@ -180,6 +182,7 @@ final class BadgePreviewController: UIViewController {
     var directory: URL!
     let startTime = ProcessInfo.processInfo.systemUptime
     var events: [[String: Any]] = []
+    var sequenceStarted = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -200,14 +203,30 @@ final class BadgePreviewController: UIViewController {
             tiles[index].image = ggRenderSettingsTile()
             surfaces[index].addSubview(tiles[index])
         }
-        showVariant(0)
-        for index in 1..<previewVariants.count {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index)) { [weak self] in self?.showVariant(index) }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(previewVariants.count) + 0.5) { [weak self] in
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !sequenceStarted else { return }
+        sequenceStarted = true
+        showNext(0)
+    }
+
+    func showNext(_ index: Int) {
+        showVariant(index)
+        view.layoutIfNeeded()
+        // Schedule only the next state after the current one has laid out.
+        // Absolute launch-time deadlines can all expire while CI is overloaded,
+        // coalescing every update into the final state before a frame is drawn.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self else { return }
+            if index + 1 < previewVariants.count {
+                self.showNext(index + 1)
+                return
+            }
             try! writeJSON(["variant_count": previewVariants.count, "screen_scale": self.view.window?.screen.scale ?? UIScreen.main.scale,
-                "screen_width_points": self.view.bounds.width, "screen_height_points": self.view.bounds.height, "completed": true],
+                "screen_width_points": self.view.bounds.width, "screen_height_points": self.view.bounds.height,
+                "serial_variant_sequence": true, "completed": true],
                 to: self.directory.appendingPathComponent("preview-complete.json"))
         }
     }
@@ -310,13 +329,20 @@ UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromCla
     return "\n".join(pieces)
 
 
-def recording_ready(recording, log, timeout=20):
-    deadline = time.monotonic() + timeout
+def recording_ready(recording, log, timeout=90):
+    started = time.monotonic()
+    deadline = started + timeout
+    next_report = started + 15
     while time.monotonic() < deadline:
         if "Recording started" in log.read_text(errors="replace"):
             return
         if recording.poll() is not None:
             raise RuntimeError("Simulator recorder exited before starting: " + log.read_text(errors="replace"))
+        if time.monotonic() >= next_report:
+            lines = log.read_text(errors="replace").splitlines()
+            progress(log.parent, "Recorder waiting", elapsed_seconds=round(time.monotonic() - started, 1),
+                output_tail=lines[-1][-500:] if lines else "No recorder output yet")
+            next_report = time.monotonic() + 15
         time.sleep(0.1)
     raise TimeoutError("Simulator did not confirm that recording started.")
 
@@ -432,7 +458,7 @@ def main():
             run_logged(output, "bootstatus", "xcrun", "simctl", "bootstatus", device, "-b", timeout=300)
             run_logged(output, "install", "xcrun", "simctl", "install", device, str(app), timeout=120)
             container = Path(run_logged(output, "container", "xcrun", "simctl", "get_app_container", device,
-                info["CFBundleIdentifier"], "data", timeout=30))
+                info["CFBundleIdentifier"], "data", timeout=150))
             with (output / "recording.log").open("w") as recording_log, (output / "console.log").open("w") as console_log:
                 progress(output, "Starting passive simulator recording")
                 recording = subprocess.Popen(["xcrun", "simctl", "io", device, "recordVideo", "--codec=h264", "--force", str(output / "branding.mp4")], stdout=recording_log, stderr=recording_log)
@@ -441,22 +467,40 @@ def main():
                     recording_ready(recording, output / "recording.log")
                     progress(output, "Launching native appearance preview")
                     launcher = subprocess.Popen(["xcrun", "simctl", "launch", "--console", device, info["CFBundleIdentifier"]], stdout=console_log, stderr=console_log)
-                    deadline = time.monotonic() + 45
+                    started = time.monotonic()
+                    deadline = started + 240
+                    next_report = started + 15
                     while not (container / "Documents/preview-complete.json").exists():
                         if time.monotonic() >= deadline:
                             raise TimeoutError("Native preview did not complete all appearance variants.")
+                        if time.monotonic() >= next_report:
+                            event_file = container / "Documents/appearance-events.json"
+                            state = "Waiting for UIKit app startup"
+                            if event_file.exists():
+                                state = event_file.read_text(errors="replace")[-700:]
+                            progress(output, "Appearance sequence waiting", elapsed_seconds=round(time.monotonic() - started, 1),
+                                latest_events=state)
+                            next_report = time.monotonic() + 15
                         time.sleep(0.2)
                     progress(output, "All appearance variants rendered")
                     time.sleep(0.5)
-                    run("xcrun", "simctl", "io", device, "screenshot", str(output / "simulator.png"))
+                    run_logged(output, "screenshot", "xcrun", "simctl", "io", device, "screenshot",
+                        str(output / "simulator.png"), timeout=150)
                 finally:
                     # End recording while the final variant is still visible.
                     if recording.poll() is None:
                         recording.send_signal(signal.SIGINT)
-                        recording.wait(timeout=30)
-                    subprocess.run(["xcrun", "simctl", "terminate", device, info["CFBundleIdentifier"]], check=False, timeout=20)
+                        recording.wait(timeout=90)
+                    try:
+                        subprocess.run(["xcrun", "simctl", "terminate", device, info["CFBundleIdentifier"]], check=False, timeout=90)
+                    except subprocess.TimeoutExpired:
+                        progress(output, "Preview termination timed out after recording stopped")
                     if launcher is not None:
-                        launcher.wait(timeout=20)
+                        try:
+                            launcher.wait(timeout=30)
+                        except subprocess.TimeoutExpired:
+                            launcher.terminate()
+                            launcher.wait(timeout=10)
             for item in (container / "Documents").iterdir():
                 if item.suffix in (".png", ".json"):
                     shutil.copy2(item, output / item.name)
@@ -464,6 +508,9 @@ def main():
         if len(descriptors) != len(VARIANTS) or any(item["bitmap_width_points"] != 93 or item["bitmap_height_points"] != 22 for item in descriptors):
             raise ValueError("Production badge canvas changed or an appearance variant is missing.")
         metadata = json.loads((output / "preview-complete.json").read_text())
+        events = json.loads((output / "appearance-events.json").read_text())
+        if [event["index"] for event in events] != list(range(len(VARIANTS))):
+            raise ValueError("The native appearance sequence did not visit every variant in order.")
         progress(output, "Extracting recorded frames with ffprobe presentation times")
         frame_sheet(output, metadata)
         metadata.update({"runtime": runtime, "device_type": device_type, "production_source_sha256": hashlib.sha256(source.encode()).hexdigest(),
