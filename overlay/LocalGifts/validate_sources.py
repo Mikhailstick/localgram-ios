@@ -16,10 +16,14 @@ SWIFT_FILES = [
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsStore.swift",
     "Ghostgram/LocalGiftsUI/Sources/LocalGiftsController.swift",
     "Ghostgram/Features/Interface/Sources/IslandBadge/GGBadgeAppearance.swift",
+    "Ghostgram/Features/Interface/Sources/LocalPremium/EGLocalPremiumMenu.swift",
+    "Ghostgram/Features/Shared/Sources/Interface/EGLocalEmojiStatus.swift",
+    "Ghostgram/Features/Shared/Sources/Interface/EGLocalPremiumSettings.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatEntries.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatActions.swift",
 ]
 SWIFT_FILES += [str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "LocalGifts/Tests").glob("*.swift") if str(p.relative_to(ROOT)).replace("\\", "/") not in SWIFT_FILES]
+SWIFT_FILES += [str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "LocalGifts/PremiumTests").glob("*.swift")]
 
 
 def errors(node):

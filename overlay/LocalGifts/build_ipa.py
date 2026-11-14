@@ -76,8 +76,8 @@ def main():
             raise SystemExit("Bazel finished without the expected device IPA; no artifact was exported.")
         output = ROOT / "LocalGifts" / "artifacts"
         output.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ipa, output / "LocalGram-unsigned.ipa")
-        print("Built LocalGifts/artifacts/LocalGram-unsigned.ipa. Re-sign with Sideloadly before installation.")
+        shutil.copy2(ipa, output / "ExoraGram-unsigned.ipa")
+        print("Built LocalGifts/artifacts/ExoraGram-unsigned.ipa. Re-sign with Sideloadly before installation.")
     finally:
         configuration_path.unlink(missing_ok=True)
 

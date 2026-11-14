@@ -1,4 +1,4 @@
-name: Build LocalGram IPA
+name: Build ExoraGram IPA
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: "App build number; keep unchanged for compilation retries"
         type: number
         required: true
-        default: 8
+        default: 9
 
 permissions:
   contents: read
@@ -66,7 +66,7 @@ jobs:
       - name: Export the compiled IPA
         uses: actions/upload-artifact@v4
         with:
-          name: LocalGram-unsigned-IPA
-          path: client/LocalGifts/artifacts/LocalGram-unsigned.ipa
+          name: ExoraGram-unsigned-IPA
+          path: client/LocalGifts/artifacts/ExoraGram-unsigned.ipa
           if-no-files-found: error
           retention-days: 7

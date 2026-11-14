@@ -1,0 +1,15 @@
+{
+  "localPremium.title": "Локальний Premium",
+  "localPremium.info": "Зірка Premium та емодзі-статус",
+  "localPremium.preview": "Попередній перегляд",
+  "localPremium.enabled": "Увімкнути локальний Premium",
+  "localPremium.showBadge": "Показувати зірку Premium",
+  "localPremium.chooseStatus": "Вибрати емодзі-статус",
+  "localPremium.clearStatus": "Приховати статус локально",
+  "localPremium.restoreStatus": "Повернути статус Telegram",
+  "localPremium.reset": "Скинути локальний Premium",
+  "localPremium.active": "Локальний Premium увімкнено",
+  "localPremium.inactive": "Звичайний вигляд профілю",
+  "localPremium.footer": "Зірка та статус видимі лише в ExoraGram, для цього акаунта. Інші користувачі бачать звичайний профіль. Вимкнення локального Premium повертає початковий вигляд.",
+  "localPremium.keywords": "преміум premium локальний емодзі статус зірка підписка"
+}

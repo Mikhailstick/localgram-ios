@@ -9,6 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = (
     "LocalGifts/", "Ghostgram/LocalGiftsUI/", "submodules/TelegramCore/Sources/LocalGifts/",
     "Ghostgram/Features/Interface/Sources/IslandBadge/",
+    "Ghostgram/Features/Interface/Sources/LocalPremium/",
+    "Ghostgram/Features/Shared/Sources/Interface/",
+    "Ghostgram/Strings/en/localPremium.json", "Ghostgram/Strings/ru/localPremium.json",
+    "Ghostgram/Strings/uk/localPremium.json", "Ghostgram/Strings/ar/localPremium.json",
     "submodules/TelegramUI/Sources/LocalGifts", "Telegram/Telegram-iOS/LocalGramAssets.xcassets/",
     "Telegram/Telegram-iOS/LocalGramIcon@3x.png",
     ".github/workflows/local-gifts.yml",

@@ -29,11 +29,12 @@ VARIANTS = [
     ("Small amber", "amber", 70, 20, 0xFF9500),
 ]
 EXPECTATIONS = """Expected appearance frames before recording:
-- Every production badge keeps a 93 x 22 pt canvas. The paperplane and LocalGram
+- Every production badge keeps a 93 x 22 pt canvas. The shared arrow and ExoraGram
   label fit fully inside its rounded pill on light and dark surfaces.
 - Host sizes 70%, 100% and 130% scale the whole bitmap together around its centre.
 - Host alpha 20%, 60% and 100% affects background, glyph and text together.
-- Nil keeps the original cyan/blue gradient. A custom UInt32 color is passed
+- Nil uses the ExoraGram violet gradient and the settings tile uses dark purple.
+  A custom UInt32 color is passed
   directly to the production renderer, without a preview-specific tint.
 - Variants advance serially after one second in each state; the numbered label
   identifies each state. No spring or animated interpolation is expected.
@@ -173,12 +174,12 @@ extension UIColor {
     }
 }
 """]
-    for name in ("ggHeaderMarkSymbol", "ggBrandColors"):
+    for name in ("ggBrandColors", "ggBrandTileColors"):
         match = re.search(r"^private let " + name + r"[^\n]*", source, re.MULTILINE)
         if match is None:
             raise ValueError("Missing production branding constant: " + name)
         pieces.append(match.group())
-    for name in ("ggRenderLocalGramIslandBadge", "ggRenderSettingsTile", "ggRenderBrandMark"):
+    for name in ("ggBrandMarkPath", "ggDrawBrandGlyph", "ggRenderBrandGlyph", "ggRenderLocalGramIslandBadge", "ggRenderSettingsTile", "ggRenderBrandMark"):
         pieces.append(function(source, name))
     if not re.search(r"\(\s*color\s*:\s*UInt32\?", function(source, "ggRenderLocalGramIslandBadge")):
         raise ValueError("Production badge renderer must accept color: UInt32? before appearance verification.")
@@ -469,7 +470,7 @@ def main():
     # simctl's default. Both captures must use the same display.
     display_options = ["--display=1"] if "Duo" in device_name else []
     progress(output, "Creating disposable simulator", device_type=device_type, device_name=device_name, runtime=runtime)
-    device = run_logged(output, "create", "xcrun", "simctl", "create", "LocalGram branding preview", device_type, runtime, timeout=operation_timeout(render_deadline, 60, 80))
+    device = run_logged(output, "create", "xcrun", "simctl", "create", "ExoraGram branding preview", device_type, runtime, timeout=operation_timeout(render_deadline, 60, 80))
     (output / "simulator-selection.json").write_text(json.dumps({"device": device, "device_type": device_type,
         "device_name": device_name, "runtime": runtime, "sdk_version": sdk_version,
         "preference": "matching SDK runtime; standard iPhone preferred when supported, Duo allowed",
@@ -483,6 +484,10 @@ def main():
             swift = Path(scratch) / "main.swift"
             swift.write_text(swift_source, encoding="utf-8")
             info = {"CFBundleIdentifier": "dev.localgram.brandingpreview", "CFBundleExecutable": "Preview", "CFBundleName": "Preview", "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0", "CFBundlePackageType": "APPL", "MinimumOSVersion": "15.0", "UIDeviceFamily": [1], "LSRequiresIPhoneOS": True, "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "UILaunchScreen": {}, "UIApplicationSceneManifest": {"UIApplicationSupportsMultipleScenes": False, "UISceneConfigurations": {"UIWindowSceneSessionRoleApplication": [{"UISceneConfigurationName": "Default", "UISceneDelegateClassName": "PreviewSceneDelegate"}]}}}
+            info["CFBundleDisplayName"] = "ExoraGram Preview"
+            info["CFBundleIcons"] = {"CFBundlePrimaryIcon": {"CFBundleIconFiles": ["AppIcon60x60"], "UIPrerenderedIcon": True}}
+            for scale in (2, 3):
+                shutil.copy2(ROOT / f"Telegram/Telegram-iOS/LocalGramAssets.xcassets/LocalGram.appiconset/iphone-60-{scale}x.png", app / f"AppIcon60x60@{scale}x.png")
             (app / "Info.plist").write_bytes(plistlib.dumps(info))
             sdk = run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path", timeout=operation_timeout(render_deadline, 60, 80))
             progress(output, "Compiling extracted production UIKit renderers")

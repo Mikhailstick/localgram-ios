@@ -1,0 +1,15 @@
+{
+  "localPremium.title": "Premium محلي",
+  "localPremium.info": "نجمة Premium وحالة الرموز التعبيرية",
+  "localPremium.preview": "معاينة",
+  "localPremium.enabled": "تفعيل Premium المحلي",
+  "localPremium.showBadge": "إظهار نجمة Premium",
+  "localPremium.chooseStatus": "اختيار حالة رمز تعبيري",
+  "localPremium.clearStatus": "إخفاء الحالة محليًا",
+  "localPremium.restoreStatus": "استعادة حالة Telegram",
+  "localPremium.reset": "إعادة ضبط Premium المحلي",
+  "localPremium.active": "Premium المحلي مفعّل",
+  "localPremium.inactive": "المظهر العادي للملف الشخصي",
+  "localPremium.footer": "تظهر النجمة والحالة في ExoraGram فقط لهذا الحساب. يرى المستخدمون الآخرون ملفك الأصلي. يؤدي إيقاف Premium المحلي إلى استعادة المظهر الأصلي.",
+  "localPremium.keywords": "premium بريميوم محلي رمز تعبيري حالة نجمة اشتراك"
+}

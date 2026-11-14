@@ -1,0 +1,15 @@
+{
+  "localPremium.title": "Local Premium",
+  "localPremium.info": "Premium star and emoji status",
+  "localPremium.preview": "Preview",
+  "localPremium.enabled": "Enable Local Premium",
+  "localPremium.showBadge": "Show Premium star",
+  "localPremium.chooseStatus": "Choose emoji status",
+  "localPremium.clearStatus": "Hide status locally",
+  "localPremium.restoreStatus": "Restore Telegram status",
+  "localPremium.reset": "Reset Local Premium",
+  "localPremium.active": "Local Premium enabled",
+  "localPremium.inactive": "Standard appearance",
+  "localPremium.footer": "The star and status are visible only in ExoraGram, for this account. Other users see your original profile. Disable Local Premium to restore the original appearance.",
+  "localPremium.keywords": "premium local emoji status star subscription"
+}

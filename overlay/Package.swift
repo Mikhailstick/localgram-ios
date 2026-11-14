@@ -8,6 +8,9 @@ let package = Package(
     targets: [
         .target(name: "LocalGiftsLedger", path: "submodules/TelegramCore/Sources/LocalGifts",
             exclude: ["LocalGiftsStore.swift"], sources: ["LocalGiftsLedger.swift"]),
-        .testTarget(name: "LocalGiftsLedgerTests", dependencies: ["LocalGiftsLedger"], path: "LocalGifts/Tests")
+        .testTarget(name: "LocalGiftsLedgerTests", dependencies: ["LocalGiftsLedger"], path: "LocalGifts/Tests"),
+        .target(name: "LocalPremiumModel", path: "Ghostgram/Features/Shared/Sources/Interface",
+            exclude: ["InterfaceShared.swift", "EGLocalPremiumSettings.swift"], sources: ["EGLocalEmojiStatus.swift"]),
+        .testTarget(name: "LocalPremiumModelTests", dependencies: ["LocalPremiumModel"], path: "LocalGifts/PremiumTests")
     ]
 )

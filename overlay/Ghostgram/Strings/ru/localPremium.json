@@ -1,0 +1,15 @@
+{
+  "localPremium.title": "Локальный Premium",
+  "localPremium.info": "Звезда Premium и эмоджи-статус",
+  "localPremium.preview": "Предпросмотр",
+  "localPremium.enabled": "Включить локальный Premium",
+  "localPremium.showBadge": "Показывать звезду Premium",
+  "localPremium.chooseStatus": "Выбрать эмоджи-статус",
+  "localPremium.clearStatus": "Скрыть статус локально",
+  "localPremium.restoreStatus": "Вернуть статус Telegram",
+  "localPremium.reset": "Сбросить локальный Premium",
+  "localPremium.active": "Локальный Premium включён",
+  "localPremium.inactive": "Обычный вид профиля",
+  "localPremium.footer": "Звезда и статус видны только в ExoraGram, для этого аккаунта. Другие пользователи видят обычный профиль. Отключение локального Premium возвращает исходный вид.",
+  "localPremium.keywords": "премиум premium локальный эмоджи статус звезда подписка"
+}

@@ -65,7 +65,7 @@ enum GGBadgeAppearance {
     private static func pickColor(context: GGMenuContext) {
         let picker = UIColorPickerViewController()
         picker.supportsAlpha = false
-        picker.selectedColor = UIColor(rgb: GGIslandBadgeAppearance.color ?? 0x35B2E9)
+        picker.selectedColor = UIColor(rgb: GGIslandBadgeAppearance.color ?? 0x8A5CF6)
         let delegate = GGBadgeAppearanceColorPickerDelegate()
         picker.delegate = delegate
         objc_setAssociatedObject(picker, &GGBadgeAppearance.colorPickerKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
