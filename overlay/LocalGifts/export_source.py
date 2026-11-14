@@ -30,7 +30,7 @@ def main():
     destination = args.destination.resolve()
     if not (destination / ".git").exists() or not (destination / "bootstrap.py").is_file():
         raise SystemExit("Choose the existing LocalGram source-export repository.")
-    if git("remote", "get-url", "origin", cwd=destination).decode().strip() != "https://github.com/Mikhailstick/localgram-ios.git":
+    if git("remote", "get-url", "origin", cwd=destination).decode().strip() != "https://github.com/Mikhailstick/exoragram-ios.git":
         raise SystemExit("Unexpected export repository; nothing was replaced.")
     manifest = json.loads((ROOT / "LocalGifts/upstream.json").read_text())
     if git("rev-parse", "HEAD").decode().strip() != manifest["commit"]:

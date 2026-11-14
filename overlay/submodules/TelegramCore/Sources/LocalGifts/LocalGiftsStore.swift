@@ -3,19 +3,8 @@ import SwiftSignalKit
 
 /// Shares one persisted ledger between the settings screen and chat renderer for each account.
 public final class LocalGiftsStore {
-    /// Enables local presentation only in the LocalGram app, without adding app-layer dependencies.
-    public static let isEnabled: Bool = {
-        let bundle = Bundle.main
-        if bundle.object(forInfoDictionaryKey: "CFBundleName") as? String == "LocalGram"
-            || bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == "LocalGram" {
-            return true
-        }
-        let urlTypes = bundle.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
-        return urlTypes.contains { urlType in
-            let schemes = urlType["CFBundleURLSchemes"] as? [String] ?? []
-            return schemes.contains("localgifts")
-        }
-    }()
+    /// Stable build policy keeps local balances and screens enabled after a rename or re-sign.
+    public static let isEnabled = LocalGiftsAppPolicy.isEnabled(infoDictionary: Bundle.main.infoDictionary ?? [:])
 
     /// A renderer-only namespace, deliberately outside every cloud and pending-send namespace.
     public static let messageNamespace: Int32 = 1_900_000_001

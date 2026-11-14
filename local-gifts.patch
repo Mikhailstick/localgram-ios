@@ -4906,7 +4906,7 @@ index 82f6d716..3ea4d9cf 100644
    "voice.transcription.wordBubblesInfo": "Натискання на слово — відтворення з цього місця",
    "voice.unit.bits": "{value} біт",
 diff --git a/Telegram/BUILD b/Telegram/BUILD
-index b671ae52..856d9187 100644
+index b671ae52..6b626cd0 100644
 --- a/Telegram/BUILD
 +++ b/Telegram/BUILD
 @@ -161,7 +161,7 @@ genrule(
@@ -4957,7 +4957,7 @@ index b671ae52..856d9187 100644
  plist_fragment(
      name = "TelegramInfoPlist",
      extension = "plist",
-@@ -1729,11 +1734,11 @@ plist_fragment(
+@@ -1729,11 +1734,13 @@ plist_fragment(
      <key>CFBundleDevelopmentRegion</key>
      <string>en</string>
      <key>CFBundleDisplayName</key>
@@ -4968,10 +4968,12 @@ index b671ae52..856d9187 100644
      <key>CFBundleName</key>
 -    <string>Ghostgram</string> <!-- GHOST: app name -->
 +    <string>ExoraGram</string>
++    <key>LocalGiftsEnabled</key>
++    <true/>
      <key>CFBundlePackageType</key>
      <string>APPL</string>
      <key>CFBundleSignature</key>
-@@ -1923,7 +1928,7 @@ plist_fragment(
+@@ -1923,7 +1930,7 @@ plist_fragment(
                  </array>
              </dict>
          </dict>
@@ -4980,7 +4982,7 @@ index b671ae52..856d9187 100644
          <dict>
              <key>UTTypeConformsTo</key>
              <array>
-@@ -1983,7 +1988,7 @@ apple_prebuilt_watchos_application(
+@@ -1983,7 +1990,7 @@ apple_prebuilt_watchos_application(
  
  ios_application(
      name = "Telegram",
@@ -4989,7 +4991,7 @@ index b671ae52..856d9187 100644
      bundle_id = "{telegram_bundle_id}".format(
          telegram_bundle_id = telegram_bundle_id,
      ),
-@@ -2001,14 +2006,15 @@ ios_application(
+@@ -2001,14 +2008,15 @@ ios_application(
          ":RequiredDeviceCapabilitiesPlist",
          ":UrlTypesInfoPlist",
      ],
@@ -5008,7 +5010,7 @@ index b671ae52..856d9187 100644
          #":DefaultAppIcon",
      ],
      frameworks = [
-@@ -2039,8 +2045,6 @@ ios_application(
+@@ -2039,8 +2047,6 @@ ios_application(
          ":embedWatchAppSetting": ":TelegramWatchApp",
          "//conditions:default": None,
      }),

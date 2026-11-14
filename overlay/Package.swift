@@ -7,7 +7,7 @@ let package = Package(
     products: [.library(name: "LocalGiftsLedger", targets: ["LocalGiftsLedger"])],
     targets: [
         .target(name: "LocalGiftsLedger", path: "submodules/TelegramCore/Sources/LocalGifts",
-            exclude: ["LocalGiftsStore.swift"], sources: ["LocalGiftsLedger.swift"]),
+            exclude: ["LocalGiftsStore.swift"], sources: ["LocalGiftsLedger.swift", "LocalGiftsAppPolicy.swift"]),
         .testTarget(name: "LocalGiftsLedgerTests", dependencies: ["LocalGiftsLedger"], path: "LocalGifts/Tests"),
         .target(name: "LocalPremiumModel", path: "Ghostgram/Features/Shared/Sources/Interface",
             exclude: ["InterfaceShared.swift", "EGLocalPremiumSettings.swift"], sources: ["EGLocalEmojiStatus.swift"]),

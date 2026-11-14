@@ -3,10 +3,12 @@ import argparse
 import json
 import os
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from prepare_unsigned_rules import prepare_unsigned_rules
 
@@ -74,6 +76,10 @@ def main():
         ipa = ROOT / "bazel-bin" / "Telegram" / "Telegram.ipa"
         if not ipa.is_file():
             raise SystemExit("Bazel finished without the expected device IPA; no artifact was exported.")
+        with zipfile.ZipFile(ipa) as archive:
+            manifests = [name for name in archive.namelist() if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", name)]
+            if len(manifests) != 1 or plistlib.loads(archive.read(manifests[0])).get("LocalGiftsEnabled") is not True:
+                raise SystemExit("The built app is missing LocalGiftsEnabled; local Stars and the gifts section would be hidden. No artifact was exported.")
         output = ROOT / "LocalGifts" / "artifacts"
         output.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ipa, output / "ExoraGram-unsigned.ipa")
