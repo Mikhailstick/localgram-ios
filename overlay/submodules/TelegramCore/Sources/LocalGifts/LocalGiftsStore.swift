@@ -73,6 +73,21 @@ public final class LocalGiftsStore {
         return self.ledger
     }
 
+    /// Unlike presentation, export must never silently represent unreadable storage as an empty ledger.
+    public func backupSnapshot() throws -> LocalGiftsLedger {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        guard !self.storageError else { throw LocalGiftsError.unreadableStorage }
+        try self.ledger.validate()
+        return self.ledger
+    }
+
+    /// The caller previews and confirms a fully validated account-local replacement.
+    public func restoreBackup(_ ledger: LocalGiftsLedger) throws {
+        try ledger.validate()
+        try self.update { $0 = ledger }
+    }
+
     public func isMarketplaceGiftPurchased(_ gift: StarGift) -> Bool {
         guard case let .unique(gift) = gift else { return false }
         return self.snapshot().purchasedCollectibleIds.contains(gift.id)

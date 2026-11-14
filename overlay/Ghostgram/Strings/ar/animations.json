@@ -1,0 +1,14 @@
+{
+  "animations.enabled": "تفعيل إعدادات الرسوم المتحركة",
+  "animations.footer": "يطبق على انتقالات الواجهة. يؤدي إيقافه إلى استعادة الرسوم المتحركة القياسية مع الحفاظ على إعداد تقليل الحركة في النظام.",
+  "animations.info": "السرعة والانتقالات السلسة وتقليل الحركة",
+  "animations.keywords": "رسوم متحركة سرعة سلاسة انتقالات حركة",
+  "animations.reduceMotion": "تقليل الحركة",
+  "animations.reduceMotionInfo": "حركة وتغيير حجم شبه فوريين.",
+  "animations.smooth": "انتقالات سلسة",
+  "animations.smoothInfo": "حركة وتلاشي دون ارتداد نابضي.",
+  "animations.speed": "سرعة الرسوم المتحركة",
+  "animations.speedInfo": "0.5× أبطأ و2× أسرع. تطبق السرعة بعد إفلات شريط التمرير.",
+  "animations.speedValue": "{value}×",
+  "animations.title": "إعدادات الرسوم المتحركة"
+}

@@ -28,7 +28,7 @@ private final class LocalGiftPreviewCell: UITableViewCell {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(gift: StarGift, context: AccountContext, theme: PresentationTheme, marketplaceType: Bool) {
+    func configure(gift: StarGift, context: AccountContext, theme: PresentationTheme, marketplaceType: Bool, purchased: Bool) {
         let file: TelegramMediaFile?
         switch gift {
         case let .generic(gift):
@@ -54,7 +54,12 @@ private final class LocalGiftPreviewCell: UITableViewCell {
             self.contentView.addSubview(view)
         }
         self.titleLabel.text = LocalGiftsStore.title(for: gift)
-        if marketplaceType {
+        self.accessoryType = purchased ? .none : .disclosureIndicator
+        self.isUserInteractionEnabled = !purchased
+        self.contentView.alpha = purchased ? 0.55 : 1.0
+        if purchased {
+            self.priceLabel.text = "Куплено локально"
+        } else if marketplaceType {
             self.priceLabel.text = "Открыть коллекционные варианты"
         } else {
             var prices: [String] = []
@@ -88,6 +93,8 @@ public enum LocalGiftsSearchTarget: String {
     case history
     case reset
     case marketplaceReset
+    case marketplaceFilters
+    case backup
 }
 
 @available(iOS 14.0, *)
@@ -231,6 +238,8 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case .giftLink: indexPath = IndexPath(row: 4, section: 1)
         case .reset: indexPath = IndexPath(row: 0, section: 3)
         case .marketplaceReset: indexPath = IndexPath(row: 1, section: 3)
+        case .marketplaceFilters: indexPath = IndexPath(row: 0, section: 4)
+        case .backup: indexPath = IndexPath(row: 1, section: 4)
         case .history: return
         }
         self.table.scrollToRow(at: indexPath, at: .middle, animated: false)
@@ -289,7 +298,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         ))
     }
 
-    public func numberOfSections(in tableView: UITableView) -> Int { return self.isHome ? 4 : 1 }
+    public func numberOfSections(in tableView: UITableView) -> Int { return self.isHome ? 5 : 1 }
 
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if !self.isHome { return self.gifts.count + (self.canLoadMore ? 1 : 0) }
@@ -298,13 +307,14 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         case 1: return 5
         case 2: return self.visibleReceipts.count
         case 3: return 2
+        case 4: return 2
         default: return 1
         }
     }
 
     public func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if !self.isHome { return self.recipient.map { "Для \(self.name(of: $0)) · ★ \(self.ledger.balance) · \(LocalTonAmount.format(self.ledger.tonBalanceNano)) GRAM" } }
-        return ["Баланс", "Подарки", "История", nil][section]
+        return ["Баланс", "Подарки", "История", nil, "Инструменты"][section]
     }
 
     public func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
@@ -323,7 +333,8 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             let cell = tableView.dequeueReusableCell(withIdentifier: "gift", for: indexPath) as! LocalGiftPreviewCell
             let marketplaceType: Bool
             if case .marketplaceTypes = self.mode { marketplaceType = true } else { marketplaceType = false }
-            cell.configure(gift: self.gifts[indexPath.row], context: self.context, theme: self.presentationData.theme, marketplaceType: marketplaceType)
+            let gift = self.gifts[indexPath.row]
+            cell.configure(gift: gift, context: self.context, theme: self.presentationData.theme, marketplaceType: marketplaceType, purchased: self.store.isMarketplaceGiftPurchased(gift))
             return cell
         }
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
@@ -355,6 +366,12 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
                 content.secondaryText = "Вернуть доступные NFT в каталог"
                 content.image = UIImage(systemName: "arrow.clockwise")
                 cell.accessoryType = .none
+            case (4, 0):
+                content.text = "Фильтры маркета"
+                content.image = UIImage(systemName: "line.3.horizontal.decrease.circle")
+            case (4, 1):
+                content.text = "Резервная копия"
+                content.image = UIImage(systemName: "externaldrive")
             default:
                 content.text = "Сбросить локальные подарки и баланс"
                 content.textProperties.color = .systemRed
@@ -370,6 +387,7 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
         if !self.isHome {
             if indexPath.row == self.gifts.count { self.resaleContext?.loadMore(); return }
             let gift = self.gifts[indexPath.row]
+            guard !self.store.isMarketplaceGiftPurchased(gift) else { return }
             if case .marketplaceTypes = self.mode, case let .generic(generic) = gift {
                 self.pushCatalog(.marketplace(generic.id))
             } else {
@@ -410,6 +428,10 @@ public final class LocalGiftsController: ViewController, UITableViewDataSource, 
             self.confirm(title: "Сбросить покупки в маркете?", message: "Купленные локально NFT снова появятся, если ещё доступны на площадке. Балансы, подарки и история сохранятся.", destructive: false, confirmTitle: "Сбросить") { [weak self] in
                 self?.perform { try self?.store.resetMarketplacePurchases() }
             }
+        case (4, 0):
+            (self.navigationController as? NavigationController)?.pushViewController(LocalGiftsMarketFilterController(context: self.context))
+        case (4, 1):
+            (self.navigationController as? NavigationController)?.pushViewController(LocalGiftsBackupController(context: self.context))
         default:
             self.confirm(title: "Сбросить фейк-подарки?", message: "Виртуальный баланс станет нулевым, локальные подарки исчезнут.", destructive: true) { [weak self] in
                 self?.perform { try self?.store.reset() }

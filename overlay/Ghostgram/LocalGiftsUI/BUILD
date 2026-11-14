@@ -13,6 +13,7 @@ swift_library(
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/TelegramCore",
         "//submodules/TelegramPresentationData",
+        "//Ghostgram/GGCore:GGCore",
         "//submodules/TelegramUI/Components/Gifts/GiftAnimationComponent",
     ],
     visibility = ["//visibility:public"],

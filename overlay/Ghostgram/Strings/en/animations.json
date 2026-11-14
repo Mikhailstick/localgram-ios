@@ -1,0 +1,14 @@
+{
+  "animations.enabled": "Enable animation settings",
+  "animations.footer": "Applies to interface transitions. Turning this off restores standard animations and preserves the system's Reduce Motion setting.",
+  "animations.info": "Speed, smooth transitions and reduced motion",
+  "animations.keywords": "animation animations speed smooth transitions motion",
+  "animations.reduceMotion": "Reduce Motion",
+  "animations.reduceMotionInfo": "Nearly instant movement and scaling.",
+  "animations.smooth": "Smooth Transitions",
+  "animations.smoothInfo": "Movement and fades without spring overshoot.",
+  "animations.speed": "Animation Speed",
+  "animations.speedInfo": "0.5× is slower; 2× is faster. Speed applies after you release the slider.",
+  "animations.speedValue": "{value}×",
+  "animations.title": "Animation Settings"
+}

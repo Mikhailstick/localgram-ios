@@ -14,17 +14,27 @@ SWIFT_FILES = [
     "LocalGifts/Tests/LocalGiftsLedgerTests.swift",
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsLedger.swift",
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsAppPolicy.swift",
+    "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsBackup.swift",
+    "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsMarketFilter.swift",
+    "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsMarketFilterSettings.swift",
     "submodules/TelegramCore/Sources/LocalGifts/LocalGiftsStore.swift",
     "Ghostgram/LocalGiftsUI/Sources/LocalGiftsController.swift",
     "Ghostgram/Features/Interface/Sources/IslandBadge/GGBadgeAppearance.swift",
     "Ghostgram/Features/Interface/Sources/LocalPremium/EGLocalPremiumMenu.swift",
     "Ghostgram/Features/Shared/Sources/Interface/EGLocalEmojiStatus.swift",
     "Ghostgram/Features/Shared/Sources/Interface/EGLocalPremiumSettings.swift",
+    "Ghostgram/Features/Shared/Sources/Interface/EGAnimationSettings.swift",
+    "Ghostgram/Features/Interface/Sources/Animations/EGAnimationMenu.swift",
+    "Ghostgram/GGCore/Sources/Animations/EGAnimationPolicy.swift",
+    "Ghostgram/GGCore/Sources/Animations/EGAnimationControls.swift",
+    "Ghostgram/LocalGiftsUI/Sources/LocalGiftsBackupController.swift",
+    "Ghostgram/LocalGiftsUI/Sources/LocalGiftsMarketFilterController.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatEntries.swift",
     "submodules/TelegramUI/Sources/LocalGiftsChatActions.swift",
 ]
 SWIFT_FILES += [str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "LocalGifts/Tests").glob("*.swift") if str(p.relative_to(ROOT)).replace("\\", "/") not in SWIFT_FILES]
 SWIFT_FILES += [str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "LocalGifts/PremiumTests").glob("*.swift")]
+SWIFT_FILES += [str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "LocalGifts/AnimationTests").glob("*.swift")]
 
 
 def errors(node):
