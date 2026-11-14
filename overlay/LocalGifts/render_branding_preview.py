@@ -568,15 +568,18 @@ def recording_ready(recording, log, timeout=120):
     raise TimeoutError("Simulator did not confirm that recording started.")
 
 
-def frame_sheet(output, metadata, timeout=150):
+def frame_sheet(output, metadata, timeout=600):
     """Reuse the project's ffprobe-indexed extractor, without resampling."""
     width = metadata["screen_width_points"]
     height = min(430, metadata["screen_height_points"] - 60)
-    subprocess.run([
-        "python3", str(ROOT / "tools/animation_sheet.py"), str(output / "branding.mp4"), str(output / "frames"),
+    # Moving states contain many more native frames than static appearance
+    # states. Keep every frame and give extraction/measurement/sheets one
+    # bounded ten-minute budget, with the usual 15-second progress journal.
+    run_logged(output, "frame-extraction",
+        "python3", "-u", str(ROOT / "tools/animation_sheet.py"), str(output / "branding.mp4"), str(output / "frames"),
         "--scale", str(metadata["screen_scale"]), "--crop", f"0,60,{width},{height}",
         "--tile-width", "350", "--columns", "4", "--rows", "3",
-    ], check=True, timeout=timeout)
+        timeout=timeout)
     shutil.copy2(output / "frames/frames.tsv", output / "frames.tsv")
     with (output / "frames.tsv").open(newline="") as source:
         rows = list(csv.DictReader(source, delimiter="\t"))
@@ -668,11 +671,12 @@ def verify_animation_sequence(output, metadata, appearance_events):
 
 
 def main():
-    # The matching Duo runtime needed 150s boot + 114s install + 99s container
-    # on the observed runner. Active work gets 14m40s so launch and frame
-    # extraction still have time; 80s remain for diagnostics/cleanup within
-    # the workflow's 16-minute render step. Per-stage limits share this budget.
-    render_deadline = time.monotonic() + 880
+    # The native eight-appearance/five-motion sequence completed on the runner,
+    # but the old 150s frame-processing cap expired. Allow up to 600s for every
+    # decoded frame, measurements and sheets after cold simulator startup.
+    # Active work gets 23m40s; 80s remain for diagnostics/cleanup within a
+    # 25-minute render step. Per-stage limits still share this bounded budget.
+    render_deadline = time.monotonic() + 1420
     if platform.system() != "Darwin":
         raise SystemExit("UIKit preview needs macOS with the iOS Simulator SDK, ffmpeg/ffprobe and Pillow.")
     missing = [name for name in ("xcrun", "codesign", "ffmpeg", "ffprobe") if shutil.which(name) is None]
@@ -803,7 +807,7 @@ def main():
             raise ValueError("The native appearance sequence did not visit every variant in order.")
         animation_descriptors, animation_events = verify_animation_sequence(output, metadata, events)
         progress(output, "Extracting recorded frames with ffprobe presentation times")
-        frame_sheet(output, metadata, timeout=operation_timeout(render_deadline, 150))
+        frame_sheet(output, metadata, timeout=operation_timeout(render_deadline, 600, 20))
         metadata.update({"runtime": runtime, "device_type": device_type, "device_name": device_name,
             "capture_display": 1 if display_options else "default",
             "production_duo_layout_test": "not performed", "production_source_sha256": hashlib.sha256(source.encode()).hexdigest(),
