@@ -52,6 +52,7 @@ jobs:
           key: localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             localgram-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream.json') }}
+            localgram-${{ runner.os }}-${{ runner.arch }}-
       - name: Run ledger tests and compile the device IPA
         id: compile
         env:

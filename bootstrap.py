@@ -41,7 +41,7 @@ def main():
     subprocess.run(["git", "apply", str(patch)], cwd=destination, check=True)
     if not args.skip_submodules:
         subprocess.run(["git", "submodule", "update", "--init", "--recursive", "--depth", "1", "--jobs", "4"], cwd=destination, check=True)
-    print("Prepared the full LocalGram client at " + str(destination))
+    print("Prepared the full ExoraGram client at " + str(destination))
 
 
 if __name__ == "__main__":
